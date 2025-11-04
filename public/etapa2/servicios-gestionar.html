@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Servicios – Buscar / Editar / Eliminar</title>
+  <link rel="stylesheet" href="servicios-gestionar.css" />
+</head>
+<body>
+  <div class="wrap">
+    <h2>Servicios — Buscar / Editar / Eliminar</h2>
+
+    <div class="toolbar">
+      <input id="txt-buscar" placeholder="Buscar por nombre (wtravel)" />
+      <button id="btn-buscar">Buscar</button>
+      <button id="btn-recargar" class="sec">Ver todos</button>
+    </div>
+
+    <div class="layout">
+      <ul id="lista-servicios" class="list"></ul>
+      <aside id="detalle" class="panel">
+        <p>Selecciona un servicio de la lista para ver el detalle…</p>
+      </aside>
+    </div>
+  </div>
+
+  <!-- IMPORTANTE: ES módulo y la ruta es relativa a /public/etapa2/ -->
+  <script type="module" src="servicios-gestionar.js"></script>
+</body>
+</html>

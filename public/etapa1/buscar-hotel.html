@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Buscar Hoteles</title>
+  <link rel="stylesheet" href="buscar-hotel.css">
+  <style>
+    .filtros-row { display: flex; gap: 16px; align-items: center; }
+    .categoria-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .categoria-checkboxes { display: flex; gap: 8px; }
+    .icon-link img { width: 24px; height: 24px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Buscar Hoteles</h2>
+
+    <!-- FILTROS FILA 1 -->
+    <div class="filtros-row">
+      <label>Continente:
+        <select id="filtro-continente">
+          <option value="">Todos</option>
+        </select>
+      </label>
+      <label>País:
+        <select id="filtro-pais" disabled>
+          <option value="">Todos</option>
+        </select>
+      </label>
+      <label>Ciudad:
+        <select id="filtro-ciudad" disabled>
+          <option value="">Todos</option>
+        </select>
+      </label>
+    </div>
+
+    <!-- FILTROS FILA 2: Estrellas -->
+    <div style="margin: 16px 0 0 0;">
+      <div><b>Filtro:</b></div>
+      <div class="categoria-row">
+        <span><b>Categoría:</b></span>
+        <div class="categoria-checkboxes" id="filtro-estrellas">
+          <label><input type="checkbox" value="" checked id="check-todos"> Todos</label>
+          <label><input type="checkbox" value="3.5" class="check-estrella"> 3.5★</label>
+          <label><input type="checkbox" value="4" class="check-estrella"> 4★</label>
+          <label><input type="checkbox" value="4.5" class="check-estrella"> 4.5★</label>
+          <label><input type="checkbox" value="5" class="check-estrella"> 5★</label>
+          <label><input type="checkbox" value="5.5" class="check-estrella"> 5.5★</label>
+        </div>
+      </div>
+      <button id="btn-buscar">Buscar</button>
+    </div>
+    <br>
+    <button onclick="window.location.href='../index.html'">Volver al inicio</button>
+  </div>
+<!-- Resultados: TABLA -->
+<div id="resultados" style="margin-top: 24px;">
+  <table id="tabla-hoteles" border="1" cellpadding="8" style="width: 100%; border-collapse: collapse;">
+    <thead>
+      <tr>
+        <th>Nombre</th>
+        <th>Estrellas</th>
+        <th>Puntaje Booking</th>
+        <th>Puntaje TripAdvisor</th>
+        <th>Descripción</th>
+        <th>Zona 1</th>
+        <th>Zona 2</th>
+        <th>Enlace Booking</th>
+        <th>Enlace TripAdvisor</th>
+      </tr>
+    </thead>
+    <tbody>
+      <!-- Aquí se van a insertar los resultados dinámicamente -->
+    </tbody>
+  </table>
+</div>
+  <script src="buscar-hoteles.js"></script>
+</body>
+</html>

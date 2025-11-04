@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Editar Servicio</title>
+  <link rel="stylesheet" href="../common.css">
+  <link rel="stylesheet" href="servicios-editar.css" />
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Editar Servicio</h1>
+      <a class="back" href="servicios-gestionar.html">← Volver</a>
+    </header>
+
+    <form id="frm">
+      <div class="grid">
+        <label>Tipo
+          <select id="id_tipo"></select>
+        </label>
+
+        <label>Proveedor
+          <select id="id_proveedor"></select>
+        </label>
+
+        <div class="fld">
+          <label>País</label>
+          <select id="sel-pais"></select>
+        </div>
+        
+        <label>Nombre WTravel
+          <input id="nombre_wtravel" type="text" />
+        </label>
+
+        <label>Tiempo del servicio (texto)
+          <input id="tiempo_servicio" type="text" placeholder="Ej: 3 h, 1 noche, 180 min" />
+        </label>
+
+        <div class="fld">
+          <label>Ciudad</label>
+          <select id="sel-ciudad" disabled></select>
+        </div>
+
+        <label>Privado
+          <select id="privado">
+            <option value="0">Compartido</option>
+            <option value="1">Privado</option>
+          </select>
+        </label>
+      </div>
+
+      <label class="row">Descripción
+        <textarea id="descripcion" rows="5"></textarea>
+      </label>
+
+      <!-- Horarios -->
+      <details id="box-horas" open>
+        <summary>Horarios</summary>
+        <div class="row">
+          <div style="display:flex;gap:8px;align-items:center">
+            <input id="inp-hora" placeholder="HH:MM" />
+            <button type="button" id="btn-add-hora">Agregar</button>
+            <button type="button" id="btn-reemplazar-horas" class="secondary">Guardar horarios</button>
+          </div>
+          <div id="chips" class="chips"></div>
+          <small>Consejo: usa formato 24h. Puedes quitar un horario desde su ✕ roja.</small>
+        </div>
+      </details>
+
+      <!-- Alojamiento (solo si el tipo es Alojamiento) -->
+      <details id="box-aloja">
+        <summary>Alojamiento</summary>
+        <div class="grid">
+          <label>Noches
+            <input id="alo-noches" type="number" min="1" />
+          </label>
+          <label>Habitaciones
+            <input id="alo-habs" type="number" min="1" />
+          </label>
+          <label>Desayuno
+            <select id="alo-des">
+              <option value="1">Con desayuno</option>
+              <option value="0">Sin desayuno</option>
+            </select>
+          </label>
+          <label>Cat. Hotel
+            <input id="alo-cath" placeholder="3★ / 4★ / 5★" />
+          </label>
+          <label>Cat. Hab.
+            <input id="alo-cab" placeholder="Estándar / Suite" />
+          </label>
+          <label>Proveedor Hotel
+            <input id="alo-prov" placeholder="AEI" value="AEI" />
+          </label>
+        </div>
+        <div class="row">
+          <button type="button" id="btn-guardar-aloja">Guardar bloque de alojamiento</button>
+        </div>
+      </details>
+
+      <div class="actions">
+        <button type="submit">Guardar cambios</button>
+        <button type="button" class="secondary" id="btn-cancel">Cancelar</button>
+      </div>
+    </form>
+  </div>
+
+  <script type="module" src="../components/api.js"></script>
+  <script type="module" src="../components/ui.js"></script>
+  <script type="module" src="servicios-editar.js"></script>
+</body>
+</html>

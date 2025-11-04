@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Eliminar Datos</title>
+  <link rel="stylesheet" href="eliminar-datos.css">
+  <style>
+    .section { margin-bottom: 32px; }
+    .item-row { display: flex; align-items: center; gap: 8px; }
+    .danger-btn { background: #e74c3c; color: #fff; border: none; padding: 6px 12px; cursor: pointer; border-radius: 5px;}
+    .danger-btn:hover { background: #c0392b; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Eliminar Zonas</h2>
+    <div class="section">
+      <label>Continente:
+        <select id="del-continente"></select>
+      </label>
+      <label>País:
+        <select id="del-pais" disabled></select>
+      </label>
+      <label>Ciudad:
+        <select id="del-ciudad" disabled></select>
+      </label>
+      <div id="zonas-list"></div>
+    </div>
+
+    <h2>Eliminar Hoteles</h2>
+    <div class="section">
+      <label>Continente:
+        <select id="delh-continente"></select>
+      </label>
+      <label>País:
+        <select id="delh-pais" disabled></select>
+      </label>
+      <label>Ciudad:
+        <select id="delh-ciudad" disabled></select>
+      </label>
+      <div id="hoteles-list"></div>
+    </div>
+
+    <button onclick="window.location.href='../index.html'">Volver al inicio</button>
+  </div>
+  <script src="eliminar-datos.js"></script>
+</body>
+</html>

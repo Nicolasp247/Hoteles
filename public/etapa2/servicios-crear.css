@@ -1,0 +1,14 @@
+@import url("index-etapa2.css");
+
+.card{padding:16px;border:1px solid #e5e7eb;border-radius:12px;margin-bottom:16px;background:#fff}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+.row{display:grid;gap:6px}
+input,select,textarea{padding:10px;border:1px solid #cbd5e1;border-radius:8px}
+button{padding:10px 14px;border:0;border-radius:8px;background:#0d6efd;color:#fff;cursor:pointer}
+button.sec{background:#64748b}
+button:hover{opacity:.95}
+.hidden{display:none}
+.chips{list-style:none;display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 0;padding:0}
+.chips li{background:#e5f0ff;border:1px solid #bfd3ff;border-radius:999px;padding:6px 10px}
+.chips li button{background:transparent;color:#1d4ed8;border:0;margin-left:6px;cursor:pointer}

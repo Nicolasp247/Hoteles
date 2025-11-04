@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Tipos de Servicio</title>
+  <link rel="stylesheet" href="../common.css">
+  <link rel="stylesheet" href="tipos-servicio.css" />
+</head>
+<body>
+  <div class="wrap">
+    <h2>Tipos de Servicio</h2>
+
+    <form id="form-tipo" class="card">
+      <div class="row">
+        <label>Nombre del tipo</label>
+        <input name="nombre" placeholder="Alojamiento / Tour / Traslado / Ticket" required />
+      </div>
+      <div class="row">
+        <button type="submit" id="btn-guardar">Guardar</button>
+        <button type="button" id="btn-cancel" class="sec">Cancelar edición</button>
+      </div>
+      <input type="hidden" name="id" />
+    </form>
+
+    <table id="tabla" class="table">
+      <thead>
+        <tr><th>Nombre</th><th style="width:140px"></th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <p><a href="index-etapa2.html">← Volver al menú</a></p>
+  </div>
+  <script type="module" src="../components/api.js"></script>
+  <script type="module" src="../components/ui.js"></script>
+  <script type="module" src="tipos-servicio.js"></script>
+</body>
+</html>
+

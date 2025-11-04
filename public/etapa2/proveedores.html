@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Proveedores</title>
+  <link rel="stylesheet" href="../common.css">
+  <link rel="stylesheet" href="proveedores.css" />
+</head>
+<body>
+  <div class="wrap">
+    <h2>Proveedores</h2>
+
+    <form id="form-proveedor" class="card">
+      <div class="row">
+        <label>Nombre</label>
+        <input name="nombre" required />
+      </div>
+      <div class="row">
+        <label>Web</label>
+        <input name="web" placeholder="https://..." />
+      </div>
+      <div class="row">
+        <label>Iniciales</label>
+        <input name="iniciales" placeholder="CVT / WEB / AEI" required />
+      </div>
+      <div class="row">
+        <button type="submit" id="btn-guardar">Guardar</button>
+        <button type="button" id="btn-cancel" class="sec">Cancelar edición</button>
+      </div>
+      <input type="hidden" name="id" />
+    </form>
+
+    <table id="tabla" class="table">
+      <thead><tr><th>Nombre</th><th>Web</th><th>Iniciales</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+
+    <p><a href="index-etapa2.html">← Volver al menú</a></p>
+  </div>
+  <script type="module" src="proveedores.js"></script>
+</body>
+</html>

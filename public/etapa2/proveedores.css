@@ -1,0 +1,11 @@
+@import url("index-etapa2.css");
+.card{padding:16px;border:1px solid #e5e7eb;border-radius:10px;margin-bottom:16px}
+.row{display:grid;gap:6px;margin-bottom:10px}
+input{padding:8px;border:1px solid #cbd5e1;border-radius:8px}
+button{padding:10px 14px;border:0;border-radius:8px;background:#0d6efd;color:#fff}
+button.sec{background:#e5e7eb;color:#111}
+.table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden}
+.table th,.table td{padding:10px;border-bottom:1px solid #eee;font-size:14px}
+.table td:last-child{text-align:right}
+.badge{font-size:12px;padding:2px 8px;border-radius:999px;background:#eef2ff}
+.actions button{margin-left:8px}

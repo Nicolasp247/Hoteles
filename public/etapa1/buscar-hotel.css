@@ -1,0 +1,128 @@
+body {
+  font-family: Arial, sans-serif;
+  background: #f7f7f7;
+}
+
+.container {
+  max-width: 600px;
+  margin: 60px auto 30px auto;
+  padding: 36px 32px 32px 32px;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  text-align: center;
+}
+
+/* TITULO */
+h2, h3 {
+  text-align: center;
+  margin-bottom: 28px;
+  font-size: 1.6rem;
+  font-weight: bold;
+}
+
+/* FILTROS FILA 1: CONTINENTE/PAIS/CIUDAD */
+.filtros-row {
+  display: flex;
+  gap: 18px;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.filtros-row label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 500;
+  text-align: left;
+}
+
+/* FILTROS FILA 2: CATEGORIAS DE ESTRELLAS */
+.categoria-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  justify-content: center;
+}
+.categoria-row > span {
+  min-width: 80px;
+  text-align: right;
+  margin-right: 6px;
+}
+.categoria-checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.categoria-checkboxes label {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-weight: 400;
+  font-size: 1em;
+  margin: 0;
+}
+
+/* BOTONES */
+#btn-buscar {
+  margin: 12px auto 0 auto;
+  width: 140px;
+  padding: 12px 0;
+  font-size: 1rem;
+  border-radius: 10px;
+  background: #0072e7;
+  color: #fff;
+  border: none;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+#btn-buscar:hover {
+  background: #005bb5;
+}
+button[onclick] {
+  background: #0072e7;
+  color: #fff;
+  padding: 14px 0;
+  width: 230px;
+  border: none;
+  border-radius: 14px;
+  font-size: 1.1rem;
+  font-weight: bold;
+  margin-top: 16px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+button[onclick]:hover {
+  background: #005bb5;
+}
+
+/* TABLA RESULTADOS (FUERA DEL CONTAINER) */
+#tabla-hoteles {
+  margin: 18px auto 0 auto;
+  border-collapse: collapse;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+  overflow: hidden;
+  width: 94vw;
+  max-width: 1200px;
+  text-align: center;
+}
+#tabla-hoteles th, #tabla-hoteles td {
+  border: 1px solid #ccc;
+  padding: 10px 12px;
+}
+#tabla-hoteles th {
+  background: #f0f6fb;
+  font-weight: bold;
+}
+
+/* RESPONSIVE */
+@media (max-width: 700px) {
+  .container { max-width: 98vw; padding: 8vw 2vw; }
+  #tabla-hoteles { width: 99vw; }
+}

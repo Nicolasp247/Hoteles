@@ -1,0 +1,38 @@
+:root{
+  --c-bg:#f7f7f7; --c-card:#fff; --c-text:#0f172a; --c-sub:#475569;
+  --c-primary:#0d6efd; --c-primary-h:#0b5ed7; --c-danger:#dc3545; --c-danger-h:#bb2d3b;
+  --c-ok:#16a34a; --c-err:#dc2626; --radius:12px; --shadow:0 2px 12px rgba(0,0,0,.08);
+}
+*{box-sizing:border-box}
+body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--c-bg);color:var(--c-text);margin:0}
+.wrap{max-width:1100px;margin:32px auto;padding:0 16px}
+.card{background:var(--c-card);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px}
+.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.row{display:grid;gap:6px;margin-bottom:10px}
+label{font-size:.9rem;color:var(--c-sub)}
+input,select,textarea{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:10px;background:#fff}
+button{padding:10px 14px;border:0;border-radius:10px;background:var(--c-primary);color:#fff;cursor:pointer}
+button:hover{background:var(--c-primary-h)}
+button.secondary{background:#64748b}
+button.secondary:hover{background:#475569}
+button.danger{background:var(--c-danger)}
+button.danger:hover{background:var(--c-danger-h)}
+button.is-loading{opacity:.7;cursor:wait}
+.table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden}
+.table th,.table td{padding:10px;border-bottom:1px solid #e5e7eb}
+.table tr:nth-child(even){background:#fafafa}
+.badge{background:#e2e8f0;padding:3px 8px;border-radius:999px;font-size:.8rem}
+.actions{display:flex;gap:8px;justify-content:flex-end}
+.empty{padding:18px;text-align:center;color:var(--c-sub)}
+/* toast */
+#app-toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#111827;color:#fff;padding:10px 14px;border-radius:10px;box-shadow:var(--shadow);opacity:0;transition:opacity .2s}
+#app-toast.ok{background:var(--c-ok)}
+#app-toast.err{background:var(--c-err)}
+/* modal */
+#app-modal{position:fixed;inset:0;pointer-events:none}
+#app-modal.open{pointer-events:auto}
+#app-modal .modal-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.35);opacity:0;transition:opacity .2s}
+#app-modal.open .modal-backdrop{opacity:1}
+#app-modal .modal{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#fff;border-radius:12px;padding:18px;min-width:320px;box-shadow:var(--shadow);opacity:0;transition:opacity .2s}
+#app-modal.open .modal{opacity:1}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}

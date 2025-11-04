@@ -1,0 +1,15 @@
+@import url("index-etapa2.css");
+
+/* formulario */
+.card{padding:16px;border:1px solid #e5e7eb;border-radius:10px;margin-bottom:16px}
+.row{display:grid;gap:6px;margin-bottom:10px}
+input{padding:10px;border:1px solid #cbd5e1;border-radius:8px}
+button{padding:10px 14px;border:0;border-radius:8px;background:#0d6efd;color:#fff;cursor:pointer}
+button.sec{background:#6b7280}
+button:hover{opacity:.95}
+
+/* tabla */
+.table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden}
+.table th,.table td{padding:12px 14px;border-bottom:1px solid #f1f5f9}
+.table thead th{background:#f8fafc;text-align:left;font-weight:600}
+.table .actions{display:flex;gap:8px;justify-content:flex-end}

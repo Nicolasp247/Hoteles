@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Gestionar Ubicaciones</title>
+  <link rel="stylesheet" href="gestinar-ubicacion.css">
+</head>
+<body>
+  <div class="container">
+    <h2>Gestionar Ubicaciones</h2>
+    
+    <!-- Bloque: Añadir Continente -->
+    <h3>Añadir Continente</h3>
+    <form id="form-continente">
+      <label>Nombre del continente:
+      <input type="text" name="nombre_continente" required>
+      </label>
+      <button type="submit">Añadir Continente</button>
+    </form>
+    <div id="mensaje-continente"></div>
+
+    <!-- Bloque: Añadir País -->
+    <h3>Añadir País</h3>
+    <form id="form-pais">
+      <label>Continente:
+      <select name="continente" id="select-continente-pais" required>
+        <!-- Opciones llenadas desde la base de datos -->
+      </select>
+      </label>
+      <label>Nombre del país:
+      <input type="text" name="nombre_pais" required>
+      </label>
+      <button type="submit">Añadir País</button>
+    </form>
+    <div id="mensaje-pais"></div>
+
+    <!-- Bloque: Añadir Ciudad -->
+    <h3>Añadir Ciudad</h3>
+    <form id="form-ciudad">
+      <label>Continente:
+      <select name="continente" id="select-continente-ciudad" required>
+        <!-- Opciones llenadas desde la base de datos -->
+      </select>
+      </label>
+      <label>País:
+      <select name="pais" id="select-pais-ciudad" required>
+        <!-- Opciones llenadas desde la base de datos según continente -->
+      </select>
+      </label>
+      <label>Nombre de la ciudad:
+      <input type="text" name="nombre_ciudad" required>
+      </label>
+      <button type="submit">Añadir Ciudad</button>
+    </form>
+    <div id="mensaje-ciudad"></div>
+    
+
+    <!-- Bloque: Añadir Zona -->
+    <h3>Añadir Zona</h3>
+    <form id="form-zona">
+      <label>Continente:
+      <select name="continente" id="select-continente-zona" required>
+        <!-- Opciones llenadas desde la base de datos -->
+      </select>
+      </label>
+      <label>País:
+      <select name="pais" id="select-pais-zona" required>
+        <!-- Opciones llenadas según continente -->
+      </select>
+      </label>
+      <label>Ciudad:
+      <select name="ciudad" id="select-ciudad-zona" required>
+        <!-- Opciones llenadas según país -->
+      </select>
+      </label>
+      <label>Nombre de la zona:
+      <input type="text" name="nombre_zona" required>
+      </label>
+      <label>Descripción:
+      <textarea name="descripcion_zona" rows="2" required></textarea>
+      </label>
+      <button type="submit">Añadir Zona</button>
+    </form>
+    <div id="mensaje-zona"></div>
+    
+
+    <br>
+    <button onclick="window.location.href='../index.html'">Volver al inicio</button>
+  </div>
+  <script src="gestionar-ubicacion.js"></script>
+</body>
+</html>

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Añadir Hotel</title>
+  <link rel="stylesheet" href="anadir-hotel.css">
+</head>
+<body>
+  <div class="container">
+    <h2>Añadir Nuevo Hotel</h2>
+    <form id="form-anadir-hotel" style="display: flex; flex-direction: column; gap: 12px;">
+      
+      <!-- Campo oculto para ciudad seleccionada -->
+      <input type="hidden" name="id_ciudad" id="input-id-ciudad">
+
+      <label>Continente:
+        <select id="select-continente" required>
+          <option value="">Selecciona un continente</option>
+        </select>
+      </label>
+
+      <label>País:
+        <select id="select-pais" required disabled>
+          <option value="">Selecciona un país</option>
+        </select>
+      </label>
+
+      <label>Ciudad:
+        <select id="select-ciudad" required disabled>
+          <option value="">Selecciona una ciudad</option>
+        </select>
+      </label>
+
+      <label>Nombre del hotel:
+        <input type="text" name="nombre" id="nombre" required>
+      </label>
+
+      <label>Estrellas (3.5 a 5.5):
+        <input type="number" name="estrellas" id="estrellas" step="0.5" min="3.5" max="5.5" required>
+      </label>
+
+      <label>Puntaje Booking:
+        <input type="number" name="booking_score" id="booking_score" step="0.1" min="0" max="10" required>
+      </label>
+
+      <label>Puntaje TripAdvisor:
+        <input type="number" name="tripadvisor_score" id="tripadvisor_score" step="0.1" min="0" max="5" required>
+      </label>
+
+      <label>Zona 1:
+        <select name="id_zona1" id="select-zona1" required disabled>
+          <option value="">Selecciona una zona</option>
+        </select>
+      </label>
+      <label>Metros a Zona 1:
+        <input type="number" name="metros_zona1" id="metros-zona1" min="0" required>
+      </label>
+
+      <label>Zona 2 (opcional):
+        <select name="id_zona2" id="select-zona2" disabled>
+          <option value="">Selecciona una zona</option>
+        </select>
+      </label>
+      <label>Metros a Zona 2 (opcional):
+        <input type="number" name="metros_zona2" id="metros-zona2" min="0">
+      </label>
+
+      <label>Descripción:
+        <textarea name="descripcion" id="descripcion" rows="3" required></textarea>
+      </label>
+
+      <label>Enlace a Booking:
+        <input type="url" name="link_booking" id="link_booking" required>
+      </label>
+
+      <label>Enlace a TripAdvisor:
+        <input type="url" name="link_tripadvisor" id="link_tripadvisor" required>
+      </label>
+
+      <button type="submit">Guardar Hotel</button>
+      <button type="button" onclick="window.location.href='../index.html'">Volver al inicio</button>
+    </form>
+    <div id="mensaje"></div>
+  </div>
+  <script src="anadir-hotel.js"></script>
+</body>
+</html>

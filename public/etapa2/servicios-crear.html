@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Crear Servicio</title>
+  <link rel="stylesheet" href="../common.css">
+  <link rel="stylesheet" href="servicios-crear.css" />
+</head>
+<body>
+  <div class="wrap">
+    <h2>Crear Servicio</h2>
+
+    <!-- Paso 1: datos base del servicio -->
+    <form id="frm-servicio" class="card">
+      <h3>1) Datos del servicio</h3>
+
+      <div class="grid-3">
+        <div class="row">
+          <label>Tipo</label>
+          <select id="id_tipo" required></select>
+        </div>
+
+        <div class="row">
+          <label>Proveedor</label>
+          <select id="id_proveedor" required></select>
+        </div>
+
+        <div class="row">
+          <label>Continente</label>
+          <select id="id_continente"></select>
+        </div>
+      </div>
+
+      <div class="grid-3">
+        <div class="row">
+          <label>País</label>
+          <select id="id_pais" disabled></select>
+        </div>
+        <div class="row">
+          <label>Ciudad</label>
+          <select id="id_ciudad" required disabled></select>
+        </div>
+        <div class="row">
+          <label>Privado</label>
+          <select id="privado">
+            <option value="0">Compartido</option>
+            <option value="1">Privado</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="row">
+          <label>Nombre WTravel</label>
+          <input id="nombre_wtravel" required />
+        </div>
+        <div class="row">
+          <label>Tiempo del servicio (texto)</label>
+          <input id="tiempo_servicio" placeholder="3 h / Día completo / 2 noches..." />
+        </div>
+      </div>
+
+      <div class="row">
+        <label>Descripción</label>
+        <textarea id="descripcion" rows="4"></textarea>
+      </div>
+
+      <div class="row">
+        <button type="submit" id="btn-crear">Crear servicio</button>
+        <button type="button" class="sec" onclick="location.href='servicios-gestionar.html'">Cancelar</button>
+      </div>
+    </form>
+
+    <!-- Paso 2: horarios (opcional) -->
+    <div id="box-horas" class="card hidden">
+      <h3>2) Horarios (opcional)</h3>
+      <div class="grid-2">
+        <div class="row">
+          <label>Agregar hora (HH:MM)</label>
+          <input id="hora-input" placeholder="10:00" />
+        </div>
+        <div class="row">
+          <label>&nbsp;</label>
+          <button id="btn-add-hora" type="button">Añadir</button>
+        </div>
+      </div>
+      <ul id="lista-horas" class="chips"></ul>
+      <div class="row">
+        <button id="btn-guardar-horas" type="button">Guardar horarios</button>
+      </div>
+    </div>
+
+    <!-- Paso 3: ficha de alojamiento (solo si tipo = Alojamiento) -->
+    <form id="frm-aloja" class="card hidden">
+      <h3>3) Alojamiento</h3>
+      <div class="grid-3">
+        <div class="row">
+          <label>Noches</label>
+          <input id="al_noches" type="number" min="1" value="1" required />
+        </div>
+        <div class="row">
+          <label>Habitaciones</label>
+          <input id="al_habs" type="number" min="1" value="1" required />
+        </div>
+        <div class="row">
+          <label>Desayuno</label>
+          <select id="al_desayuno">
+            <option value="1">Con desayuno</option>
+            <option value="0">Sin desayuno</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="grid-3">
+        <div class="row">
+          <label>Categoría hotel</label>
+          <input id="al_cat_hotel" placeholder="3★ / 4★ / 5★" />
+        </div>
+        <div class="row">
+          <label>Categoría habitación</label>
+          <input id="al_cat_hab" placeholder="Estándar / Suite..." />
+        </div>
+        <div class="row">
+          <label>Proveedor hotel</label>
+          <input id="al_prov_hotel" maxlength="5" value="AEI" />
+        </div>
+      </div>
+
+      <div class="row">
+        <button type="submit">Guardar ficha de alojamiento</button>
+      </div>
+    </form>
+
+    <p><a href="index-etapa2.html">← Volver al menú</a></p>
+  </div>
+  <script type="module" src="../components/api.js"></script>
+  <script type="module" src="../components/ui.js"></script>
+  <script type="module" src="servicios-crear.js"></script>
+</body>
+</html>
