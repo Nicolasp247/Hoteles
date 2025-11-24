@@ -47,7 +47,8 @@ app.use('/api', require('./src/routes/etapa2/servicios'));
 app.use('/api', require('./src/routes/etapa2/alojamientos'));
 
 // 404 solo para rutas de API
-app.use('/api/*', (_req, res) => {
+// 404 solo para rutas de API
+app.use('/api', (_req, res) => {
   res.status(404).json({ error: 'Ruta no encontrada' });
 });
 
