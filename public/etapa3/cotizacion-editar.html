@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Cotizador – Editar cotización</title>
+
+  <link rel="stylesheet" href="cotizacion-editar.css" />
+</head>
+<body>
+  <header>
+    <h1>Cotizador – Cotización <span id="header-id"></span></h1>
+    <nav>
+      <a href="../index.html">Inicio</a> |
+      <a href="cotizacion-crear.html">Nueva cotización</a> |
+      <a href="index-etapa3.html">Menú cotizaciones</a>
+    </nav>
+    <hr />
+  </header>
+
+  <main>
+    <!-- 1. SERVICIOS (Filtros + selección de servicio) -->
+    <section>
+      <h2>1. Servicios</h2>
+
+      <!-- Filtros principales -->
+      <div class="filtros-grid">
+        <div>
+          <label>Continente<br/>
+            <select id="filtro-continente">
+              <option value="">(Todos)</option>
+              <!-- Más adelante cargamos opciones reales -->
+            </select>
+          </label>
+        </div>
+        <div>
+          <label>País<br/>
+            <select id="filtro-pais">
+              <option value="">(Todos)</option>
+            </select>
+          </label>
+        </div>
+        <div>
+          <label>Ciudad<br/>
+            <select id="filtro-ciudad">
+              <option value="">(Todas)</option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <!-- Tipo de servicio + fechas -->
+      <div class="filtros-grid filtros-servicio">
+        <div>
+          <label>Tipo de servicio<br/>
+            <select id="filtro-tipo-servicio">
+              <option value="">(Todos)</option>
+              <option value="alojamiento">Alojamiento</option>
+              <option value="traslado">Traslado</option>
+              <option value="visita">Visita</option>
+              <option value="excursion">Excursión</option>
+              <option value="vuelo">Vuelo</option>
+              <option value="tren">Tren</option>
+              <option value="otro">Otro</option>
+            </select>
+          </label>
+        </div>
+
+        <div>
+          <label>Fecha de uso (desde)<br/>
+            <input type="date" id="fecha-desde" />
+          </label>
+        </div>
+
+        <div id="wrapper-fecha-hasta">
+          <label>Fecha de uso (hasta)<br/>
+            <input type="date" id="fecha-hasta" />
+          </label>
+        </div>
+      </div>
+
+      <!-- Seleccionar servicio + opcional -->
+      <div class="seleccionar-servicio">
+        <div>
+          <label>Seleccionar servicio<br/>
+            <!-- Más adelante esto se llenará con servicios reales desde la API -->
+            <select id="select-servicio">
+              <option value="">(Seleccionar servicio)</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="opcional-wrapper">
+          <span>Opcional</span>
+          <label>
+            <input type="checkbox" id="chk-opcional" />
+            Sí
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. SERVICIOS INCLUIDOS (tabla) -->
+    <section>
+      <h2>2. Servicios incluidos</h2>
+
+      <table class="tabla-servicios">
+        <thead>
+          <tr>
+            <th>Cambiar<br/>orden</th>
+            <th>Índice</th>
+            <th>Fecha</th>
+            <th>Servicio</th>
+            <th>Precio (USD)</th>
+          </tr>
+        </thead>
+        <tbody id="tabla-servicios-body">
+          <!-- Filas se añaden desde JS -->
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 3. PRECIO TOTAL + BOTONES -->
+    <section class="bloque-total">
+      <h2>3. Precio total aproximado por persona en USD, porción terrestre</h2>
+
+      <div class="total-wrapper">
+        <label>
+          Total USD<br/>
+          <input type="number" id="total-usd" readonly />
+        </label>
+      </div>
+
+      <div class="botones-acciones">
+        <button id="btn-insertar-servicio" type="button">
+          Insertar servicio
+        </button>
+
+        <button id="btn-crear-servicio" type="button">
+          Crear servicio
+        </button>
+
+        <button id="btn-calendario-1" type="button">
+          Calendario
+        </button>
+
+        <button id="btn-calendario-2" type="button">
+          Calendario
+        </button>
+      </div>
+    </section>
+
+    <p id="mensaje-error" class="mensaje-error"></p>
+  </main>
+
+  <script src="../components/api.js"></script> <!-- si lo usas -->
+  <script src="cotizacion-editar.js"></script>
+</body>
+</html>

@@ -126,43 +126,94 @@ router.get('/servicios', async (_req, res) => {
 /* ------------------------------------------
    GET: detalle de un servicio (panel derecho)
 ------------------------------------------- */
+/* ------------------------------------------
+   GET: detalle de un servicio (panel derecho)
+   Ahora devuelve también:
+   - alojamiento (como antes)
+   - horas
+   - traslado / tour / vuelo / tren (si existen)
+------------------------------------------- */
 router.get('/servicios/:id', async (req, res) => {
   try {
     const id = Number(req.params.id);
-    if (!id) return res.status(400).json({ error: 'id inválido' });
+    if (!id) {
+      return res.status(400).json({ error: 'id inválido' });
+    }
 
+    // 1) Datos base del servicio
     const [rows] = await pool.query(
       `SELECT s.id, s.id_tipo, s.id_proveedor, s.id_ciudad,
-              s.nombre_wtravel, s.tiempo_servicio, s.privado, s.descripcion,
+              s.nombre_wtravel, s.tiempo_servicio, s.privado, s.descripcion, s.link_reserva,
               ts.nombre AS tipo,
               p.nombre  AS proveedor,
               c.nombre  AS ciudad
-         FROM Servicio s
-         JOIN TipoServicio ts ON ts.id = s.id_tipo
-         JOIN Proveedor   p  ON p.id  = s.id_proveedor
-         JOIN Ciudad      c  ON c.id  = s.id_ciudad
+         FROM servicio s
+         JOIN tiposervicio ts ON ts.id = s.id_tipo
+         JOIN proveedor   p  ON p.id  = s.id_proveedor
+         JOIN ciudad      c  ON c.id  = s.id_ciudad
         WHERE s.id = ?`,
       [id]
     );
-    if (rows.length === 0) return res.status(404).json({ error: 'Servicio no encontrado' });
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Servicio no encontrado' });
+    }
 
     const base = rows[0];
 
-    const [aloja] = await pool.query(
+    // 2) Alojamiento (1:1 opcional)
+    const [alojaRows] = await pool.query(
       `SELECT noches, habitaciones, desayuno, categoria_hotel, categoria_hab, proveedor_hotel
-         FROM Alojamiento
+         FROM alojamiento
         WHERE id_servicio = ?`,
       [id]
     );
+    const alojamiento = alojaRows[0] || null;
 
-    const [hrs] = await pool.query(
+    // 3) Horas (0..N)
+    const [hrsRows] = await pool.query(
       `SELECT DATE_FORMAT(hora,'%H:%i') AS hora
-        FROM ServicioHora
+         FROM serviciohora
         WHERE id_servicio = ?
         ORDER BY hora`,
       [id]
     );
+    const horas = hrsRows.map(x => x.hora);
 
+    // 4) Subtipos nuevos (cada uno 1:1 opcional)
+    const [trasRows] = await pool.query(
+      `SELECT origen, destino, escalas, vehiculo
+         FROM traslado
+        WHERE id_servicio = ?`,
+      [id]
+    );
+    const traslado = trasRows[0] || null;
+
+    const [tourRows] = await pool.query(
+      `SELECT tipo_guia, idioma, duracion_min
+         FROM tour
+        WHERE id_servicio = ?`,
+      [id]
+    );
+    const tour = tourRows[0] || null;
+
+    const [vueloRows] = await pool.query(
+      `SELECT origen, destino, escalas, clase, equipaje
+         FROM vuelo
+        WHERE id_servicio = ?`,
+      [id]
+    );
+    const vuelo = vueloRows[0] || null;
+
+    const [trenRows] = await pool.query(
+      `SELECT origen, destino, escalas, clase, sillas_reservadas
+         FROM tren
+        WHERE id_servicio = ?`,
+      [id]
+    );
+    const tren = trenRows[0] || null;
+
+    // 5) Respuesta final
     res.json({
       id: base.id,
       id_tipo: base.id_tipo,
@@ -172,18 +223,27 @@ router.get('/servicios/:id', async (req, res) => {
       tiempo_servicio: base.tiempo_servicio,
       privado: !!base.privado,
       descripcion: base.descripcion,
+      link_reserva: base.link_reserva || null,
+
       tipo: base.tipo,
       proveedor: base.proveedor,
       ciudad: base.ciudad,
-      alojamiento: aloja[0] || null,
-      horas: hrs.map(x => x.hora)
-    });
 
+      alojamiento,
+      horas,
+
+      // subtipos
+      traslado,
+      tour,
+      vuelo,
+      tren
+    });
   } catch (err) {
     console.error('GET /servicios/:id', err);
     res.status(500).json({ error: String(err) });
   }
 });
+
 
 /* ---------------------------
    PUT: actualizar servicio
