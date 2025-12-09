@@ -1,7 +1,7 @@
 // backend/src/routes/etapa3/cotizaciones.js
 const express = require("express");
-const router  = express.Router();
-const db      = require("../../db"); // pool mysql2/promise
+const router = express.Router();
+const db = require("../../db"); // pool mysql2/promise
 
 // =======================
 // Helpers
@@ -292,6 +292,9 @@ router.get("/cotizaciones/:id", async (req, res) => {
 /**
  * POST /api/cotizaciones/:id/items
  * Inserta un servicio en una cotización
+ * Ahora:
+ *  - Calcula precio_usd según la tabla servicio_precio_mes y el mes de fecha_servicio.
+ *  - Para Vuelo / Tren deja precio_usd en NULL.
  */
 router.post("/cotizaciones/:id/items", async (req, res) => {
   try {
@@ -309,8 +312,8 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
       titulo_override,
       clase_override,
       idioma_override,
-      nota_linea,
-      precio_usd           // opcional, puede venir null
+      nota_linea
+      // precio_usd: se IGNORA, lo calculamos nosotros
     } = req.body || {};
 
     if (!id_servicio || !fecha_servicio) {
@@ -322,7 +325,51 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
 
     const esOpcional = es_opcional ? 1 : 0;
 
-    // Siguiente orden dentro del día
+    // 1) Obtenemos el tipo de servicio para saber si es vuelo/tren
+    const [servRows] = await db.execute(
+      `
+      SELECT s.id, ts.nombre AS tipo_servicio
+      FROM servicio s
+      JOIN tiposervicio ts ON ts.id = s.id_tipo
+      WHERE s.id = ?
+      `,
+      [id_servicio]
+    );
+
+    if (!servRows.length) {
+      return res.status(400).json({
+        ok: false,
+        mensaje: "Servicio no encontrado."
+      });
+    }
+
+    const tipoServicioNombre = servRows[0].tipo_servicio || "";
+    const esSinPrecio = esTipoSinPrecio(tipoServicioNombre);
+
+    // 2) Calculamos precio_usd_final según mes (si NO es vuelo/tren)
+    let precio_usd_final = null;
+
+    if (!esSinPrecio) {
+      // Tomamos el mes de fecha_servicio
+      const [precioRows] = await db.execute(
+        `
+        SELECT spm.precio_usd
+        FROM servicio_precio_mes spm
+        WHERE spm.id_servicio = ?
+          AND spm.mes = MONTH(?)
+        `,
+        [id_servicio, fecha_servicio]
+      );
+
+      if (precioRows.length) {
+        precio_usd_final = precioRows[0].precio_usd;
+      } else {
+        // Si no hay precio definido para ese mes, lo dejamos en NULL.
+        precio_usd_final = null;
+      }
+    }
+
+    // 3) Siguiente orden dentro del día
     const [maxRows] = await db.execute(
       `
       SELECT COALESCE(MAX(orden_dia), 0) AS maxOrden
@@ -333,7 +380,7 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
     );
     const siguienteOrden = (maxRows[0]?.maxOrden || 0) + 1;
 
-    // Insert item (OJO: orden de columnas y params coincide)
+    // 4) Insert item
     const [result] = await db.execute(
       `
       INSERT INTO cotizacion_item (
@@ -364,13 +411,13 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
         clase_override || null,
         idioma_override || null,
         nota_linea || null,
-        precio_usd != null ? precio_usd : null
+        precio_usd_final
       ]
     );
 
     const idItem = result.insertId;
 
-    // Volver a leer el item con datos de servicio / tipo / ciudad / alojamiento
+    // 5) Volver a leer el item con datos de servicio / tipo / ciudad / alojamiento
     const [rows] = await db.execute(
       `
       SELECT
@@ -408,8 +455,8 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
       [idItem]
     );
 
-    const row  = rows[0];
-    let base   = row.titulo_override || row.nombre_servicio || "";
+    const row = rows[0];
+    let base = row.titulo_override || row.nombre_servicio || "";
     const tipo = row.tipo_servicio || "";
 
     if (esTipoAlojamiento(tipo)) {
@@ -432,6 +479,62 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
     return res.status(500).json({
       ok: false,
       mensaje: "Error interno al crear el item de la cotización.",
+      error: error.message
+    });
+  }
+});
+
+/**
+ * PUT /api/cotizaciones/:id/items/orden
+ * Actualiza orden_dia de todos los items de una cotización.
+ * Body:
+ *   { orden: [ { id_item, orden_dia }, ... ] }
+ */
+router.put("/cotizaciones/:id/items/orden", async (req, res) => {
+  try {
+    const idCotizacion = Number(req.params.id);
+    if (!idCotizacion) {
+      return res.status(400).json({ ok: false, mensaje: "ID de cotización inválido." });
+    }
+
+    const orden = Array.isArray(req.body.orden) ? req.body.orden : [];
+    if (!orden.length) {
+      return res.status(400).json({ ok: false, mensaje: "No se recibió orden para actualizar." });
+    }
+
+    const conn = await db.getConnection();
+    try {
+      await conn.beginTransaction();
+
+      for (const item of orden) {
+        const idItem = Number(item.id_item);
+        const ordenDia = Number(item.orden_dia);
+        if (!idItem || !ordenDia) continue;
+
+        await conn.execute(
+          `
+          UPDATE cotizacion_item
+          SET orden_dia = ?
+          WHERE id_item = ? AND id_cotizacion = ?
+          `,
+          [ordenDia, idItem, idCotizacion]
+        );
+      }
+
+      await conn.commit();
+    } catch (e) {
+      await conn.rollback();
+      throw e;
+    } finally {
+      conn.release();
+    }
+
+    return res.json({ ok: true, mensaje: "Orden actualizado correctamente." });
+  } catch (error) {
+    console.error("Error al actualizar orden de items:", error);
+    return res.status(500).json({
+      ok: false,
+      mensaje: "Error interno al actualizar el orden de los items.",
       error: error.message
     });
   }
@@ -463,70 +566,6 @@ router.delete("/cotizaciones/items/:id_item", async (req, res) => {
     res.status(500).json({
       ok: false,
       mensaje: "Error interno al eliminar el item.",
-      error: error.message
-    });
-  }
-});
-
-/**
- * PUT /api/cotizaciones/:id/items/orden
- * Actualiza el orden_dia de todos los items de una cotización.
- * Body:
- * {
- *   orden: [
- *     { id_item: 10, orden_dia: 1 },
- *     { id_item: 11, orden_dia: 2 },
- *     ...
- *   ]
- * }
- */
-router.put("/cotizaciones/:id/items/orden", async (req, res) => {
-  try {
-    const idCotizacion = parseInt(req.params.id, 10);
-    if (Number.isNaN(idCotizacion)) {
-      return res.status(400).json({ ok: false, mensaje: "ID de cotización inválido." });
-    }
-
-    const orden = Array.isArray(req.body.orden) ? req.body.orden : [];
-    if (orden.length === 0) {
-      return res.status(400).json({
-        ok: false,
-        mensaje: "El cuerpo debe incluir un array 'orden' con al menos un elemento."
-      });
-    }
-
-    const ids = orden.map(o => o.id_item);
-
-    // Verificar que los items pertenecen a esa cotización
-    const [rows] = await db.execute(
-      "SELECT id_item FROM cotizacion_item WHERE id_cotizacion = ? AND id_item IN (?)",
-      [idCotizacion, ids]
-    );
-    const idsValidos = new Set(rows.map(r => r.id_item));
-    if (idsValidos.size !== ids.length) {
-      return res.status(400).json({
-        ok: false,
-        mensaje: "Hay items que no pertenecen a la cotización indicada."
-      });
-    }
-
-    // Actualizar uno a uno
-    for (const o of orden) {
-      await db.execute(
-        "UPDATE cotizacion_item SET orden_dia = ? WHERE id_item = ?",
-        [o.orden_dia, o.id_item]
-      );
-    }
-
-    return res.json({
-      ok: true,
-      mensaje: "Orden actualizado correctamente."
-    });
-  } catch (error) {
-    console.error("Error al actualizar orden de items:", error);
-    return res.status(500).json({
-      ok: false,
-      mensaje: "Error interno al actualizar el orden.",
       error: error.message
     });
   }

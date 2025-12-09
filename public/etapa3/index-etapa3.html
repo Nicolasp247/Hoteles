@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Cotizador – Menú de cotizaciones</title>
+
+  <!-- Reutilizamos estilos generales de etapa 3 si quieres -->
+  <link rel="stylesheet" href="cotizacion-editar.css" />
+  <link rel="stylesheet" href="index-etapa3.css" />
+</head>
+<body>
+  <header>
+    <h1>Cotizador – Menú de cotizaciones</h1>
+    <nav>
+      <a href="../index.html">Inicio</a> |
+      <a href="cotizacion-crear.html">Nueva cotización</a>
+    </nav>
+    <hr />
+  </header>
+
+  <main>
+    <!-- Bloque 1: Crear nueva -->
+    <section class="sec-nueva">
+      <h2>1. Crear nueva cotización</h2>
+      <p>
+        Usa este botón para iniciar una nueva cotización desde cero.
+      </p>
+      <button id="btn-nueva-cotizacion" type="button">
+        + Crear nueva cotización
+      </button>
+    </section>
+
+    <!-- Bloque 2: Buscar / editar existentes -->
+    <section class="sec-listado">
+      <h2>2. Buscar y editar cotizaciones existentes</h2>
+
+      <div class="buscador-wrapper">
+        <label>
+          Buscar por nombre, pasajero o agente<br />
+          <input
+            type="text"
+            id="txt-buscar"
+            placeholder="Ej: 2602 NT Juan, o 'AREVALO', o 'WT'..."
+          />
+        </label>
+        <button type="button" id="btn-limpiar-busqueda">Limpiar</button>
+      </div>
+
+      <div class="tabla-wrapper">
+        <table class="tabla-cotizaciones">
+          <thead>
+            <tr>
+              <th>Nombre de la cotización</th>
+              <th>Pasajero</th>
+              <th>Agente</th>
+              <th>Fecha viaje</th>
+              <th>Personas</th>
+              <th>Acción</th>
+            </tr>
+          </thead>
+          <tbody id="tbody-cotizaciones">
+            <!-- Filas generadas por JS -->
+          </tbody>
+        </table>
+      </div>
+
+      <p id="mensaje-listado" class="mensaje-listado"></p>
+    </section>
+  </main>
+
+  <script src="index-etapa3.js"></script>
+</body>
+</html>

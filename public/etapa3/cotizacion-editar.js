@@ -58,7 +58,6 @@ document.addEventListener("DOMContentLoaded", () => {
   ];
 
   function parseYMD(ymd) {
-    if (!ymd) return new Date(NaN);
     const [y, m, d] = ymd.split("-").map(Number);
     return new Date(y, m - 1, d);
   }
@@ -66,24 +65,20 @@ document.addEventListener("DOMContentLoaded", () => {
   function sumarDiasYmd(ymd, dias) {
     const d = parseYMD(ymd);
     d.setDate(d.getDate() + dias);
-    const y   = d.getFullYear();
-    const mes = String(d.getMonth() + 1).padStart(2, "0");
-    const dia = String(d.getDate()).padStart(2, "0");
-    return `${y}-${mes}-${dia}`;
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
   }
 
-  // Reglas de formato:
-  // - mismo mes:  12 – 15 de diciembre de 2025
-  // - distinto mes mismo año: 25 de enero a 02 de febrero de 2026
-  // - distinto año: 25 de diciembre de 2026 a 08 de enero de 2027
   function formatoRangoAlojamiento(desdeYmd, hastaYmd) {
     const d1 = parseYMD(desdeYmd);
     const d2 = parseYMD(hastaYmd);
 
-    const dia1  = d1.getDate();                     // sin pad para el primer día
-    const dia2  = String(d2.getDate()).padStart(2, "0");
-    const mes1  = MESES[d1.getMonth()];
-    const mes2  = MESES[d2.getMonth()];
+    const dia1 = String(d1.getDate()).padStart(2, "0");
+    const dia2 = String(d2.getDate()).padStart(2, "0");
+    const mes1 = MESES[d1.getMonth()];
+    const mes2 = MESES[d2.getMonth()];
     const anio1 = d1.getFullYear();
     const anio2 = d2.getFullYear();
 
@@ -94,19 +89,16 @@ document.addEventListener("DOMContentLoaded", () => {
       // 25 de enero a 02 de febrero de 2026
       return `${dia1} de ${mes1} a ${dia2} de ${mes2} de ${anio1}`;
     } else {
-      // 25 de diciembre de 2026 a 08 de enero de 2027
+      // 25 de diciembre de 2025 a 08 de enero de 2026
       return `${dia1} de ${mes1} de ${anio1} a ${dia2} de ${mes2} de ${anio2}`;
     }
   }
 
-  // Para servicios que NO son alojamiento:
-  // Lunes, 08 de diciembre de 2025
   function formatoFechaServicio(fechaYmd) {
     const d = parseYMD(fechaYmd);
-    if (Number.isNaN(d.getTime())) return "";
     const diaSemana = DIAS_SEMANA[d.getDay()];
-    const dia  = String(d.getDate()).padStart(2, "0");
-    const mes  = MESES[d.getMonth()];
+    const dia = String(d.getDate()).padStart(2, "0");
+    const mes = MESES[d.getMonth()];
     const anio = d.getFullYear();
     const diaCap = diaSemana.charAt(0).toUpperCase() + diaSemana.slice(1);
     return `${diaCap}, ${dia} de ${mes} de ${anio}`;
@@ -125,16 +117,11 @@ document.addEventListener("DOMContentLoaded", () => {
   // a nuestro objeto "item" de la tabla
   function mapRowToItem(row) {
     const tipo = row.tipo_servicio || "";
-    const servicioTextoBruto = row.servicio_texto || row.nombre_servicio || "";
-
-    const esAlojamiento =
-      esTipoAlojamientoTexto(tipo) ||
-      servicioTextoBruto.toLowerCase().includes("aloj");
+    const esAlojamiento = esTipoAlojamientoTexto(tipo);
 
     const fechaYmd = String(row.fecha_servicio).substring(0, 10);
     let fechaTexto;
 
-    // Si backend nos da noches_alojamiento podemos reconstruir el rango
     if (esAlojamiento && row.noches_alojamiento && row.noches_alojamiento > 0) {
       const desde = fechaYmd;
       const hasta = sumarDiasYmd(desde, row.noches_alojamiento - 1);
@@ -143,9 +130,8 @@ document.addEventListener("DOMContentLoaded", () => {
       fechaTexto = formatoFechaServicio(fechaYmd);
     }
 
-    const servicioTexto = servicioTextoBruto;
+    const servicioTexto = row.servicio_texto || row.nombre_servicio || "";
 
-    // Precio: el backend ya deja vuelo/tren con precio_usd = null
     let precio = row.precio_usd;
     if (esTipoSinPrecio(tipo)) {
       precio = null;
@@ -162,6 +148,33 @@ document.addEventListener("DOMContentLoaded", () => {
       servicioTexto,
       precio
     };
+  }
+
+  // ====== Guardar orden en backend ======
+  async function guardarOrdenEnBackend() {
+    if (!idCotizacion) return;
+    try {
+      const payload = {
+        orden: items.map((it, index) => ({
+          id_item: it.id_item,
+          orden_dia: index + 1
+        }))
+      };
+
+      const resp = await fetch(`/api/cotizaciones/${idCotizacion}/items/orden`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await resp.json();
+      if (!resp.ok || !data.ok) {
+        console.warn("No se pudo guardar el orden en backend:", data.mensaje || data.error);
+      }
+      // No hace falta hacer nada más: el orden visual ya lo tenemos en items[]
+    } catch (err) {
+      console.error("Error guardando orden en backend:", err);
+    }
   }
 
   // ====== Tabla de servicios incluidos ======
@@ -248,7 +261,7 @@ document.addEventListener("DOMContentLoaded", () => {
     recalcularTotal();
   }
 
-  function moverItem(idx, delta) {
+  async function moverItem(idx, delta) {
     const newIndex = idx + delta;
     if (newIndex < 0 || newIndex >= items.length) return;
 
@@ -257,9 +270,8 @@ document.addEventListener("DOMContentLoaded", () => {
     items[newIndex] = tmp;
 
     actualizarTablaDesdeEstado();
-    sincronizarOrdenConServidor();  // <-- nuevo
+    await guardarOrdenEnBackend();
   }
-
 
   async function eliminarItem(it, index) {
     const seguro = window.confirm("¿Eliminar este servicio de la cotización?");
@@ -276,33 +288,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
       items.splice(index, 1);
       actualizarTablaDesdeEstado();
+      // (Opcional) podríamos volver a llamar a guardarOrdenEnBackend() para recompactar orden_dia
     } catch (err) {
       console.error(err);
       mostrarError("No se pudo eliminar el servicio: " + err.message);
-    }
-  }
-  async function sincronizarOrdenConServidor() {
-    if (!idCotizacion) return;
-
-    const payload = {
-      orden: items.map((it, idx) => ({
-        id_item: it.id_item,
-        orden_dia: idx + 1
-      }))
-    };
-
-    try {
-      const resp = await fetch(`/api/cotizaciones/${idCotizacion}/items/orden`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      const data = await resp.json();
-      if (!resp.ok || !data.ok) {
-        console.warn("No se pudo guardar el nuevo orden:", data.mensaje || data.error);
-      }
-    } catch (err) {
-      console.warn("Error al sincronizar orden:", err);
     }
   }
 
@@ -513,6 +502,12 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
+      // NUEVO: usar el nombre_cotizacion en el título
+      const cab = data.cabecera || data.cotizacion;
+      if (cab && cab.nombre_cotizacion && headerIdEl) {
+        headerIdEl.textContent = cab.nombre_cotizacion;
+      }
+
       const lista = data.items || [];
       nextIdLocal = 1;
       items = lista.map((row) => mapRowToItem(row));
@@ -553,7 +548,7 @@ document.addEventListener("DOMContentLoaded", () => {
           id_servicio: Number(idServicioSeleccionado),
           fecha_servicio: fechaDesde,
           es_opcional: esOpcional
-          // precio_usd lo calculará el backend cuando lo implementemos
+          // precio_usd lo calculará el backend cuando tengamos módulo de precios
         })
       });
 
@@ -564,20 +559,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const row = data.item;
       const nuevoItem = mapRowToItem(row);
-
-      // Aquí sí tenemos fecha_desde y, si es alojamiento, fecha_hasta del formulario,
-      // así que sobreescribimos el texto de fecha para cumplir exactamente tus reglas.
-      const isoDesde = fechaDesdeInput.value;
-      const isoHasta = fechaHastaInput.value;
-
-      if (esTipoAlojamientoSeleccionado() && isoHasta) {
-        nuevoItem.fecha = formatoRangoAlojamiento(isoDesde, isoHasta);
-      } else {
-        nuevoItem.fecha = formatoFechaServicio(isoDesde);
-      }
-
       items.push(nuevoItem);
       actualizarTablaDesdeEstado();
+      await guardarOrdenEnBackend(); // para mantener orden_dia coherente
     } catch (err) {
       console.error(err);
       mostrarError("No se pudo insertar el servicio: " + err.message);
