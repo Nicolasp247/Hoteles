@@ -102,18 +102,25 @@ router.post('/servicios/:id/horas', async (req, res) => {
 router.get('/servicios', async (_req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT s.id,
-              s.nombre_wtravel,
-              s.tiempo_servicio,
-              s.privado,
-              s.descripcion,
-              ts.nombre AS tipo,
-              p.nombre  AS proveedor,
-              c.nombre  AS ciudad
-         FROM Servicio s
-         JOIN TipoServicio ts ON s.id_tipo = ts.id
-         JOIN Proveedor   p  ON s.id_proveedor = p.id
-         JOIN Ciudad      c  ON s.id_ciudad = c.id
+      `SELECT
+          s.id,
+          s.id_tipo,
+          s.id_ciudad,
+          s.nombre_wtravel,
+          s.tiempo_servicio,
+          s.privado,
+          s.descripcion,
+          ts.nombre AS tipo,
+          p.nombre  AS proveedor,
+          c.nombre  AS ciudad,
+          pa.id     AS id_pais,
+          ct.id     AS id_continente
+       FROM Servicio s
+       JOIN TipoServicio ts ON s.id_tipo = ts.id
+       JOIN Proveedor   p  ON s.id_proveedor = p.id
+       JOIN Ciudad      c  ON s.id_ciudad = c.id
+       JOIN Pais        pa ON c.id_pais = pa.id
+       JOIN Continente  ct ON pa.id_continente = ct.id
        ORDER BY s.nombre_wtravel`
     );
     res.json(rows);
@@ -122,6 +129,7 @@ router.get('/servicios', async (_req, res) => {
     res.status(500).json({ error: String(err) });
   }
 });
+
 
 /* ------------------------------------------
    GET: detalle de un servicio (panel derecho)

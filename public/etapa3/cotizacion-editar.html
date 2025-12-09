@@ -28,7 +28,7 @@
           <label>Continente<br/>
             <select id="filtro-continente">
               <option value="">(Todos)</option>
-              <!-- Más adelante cargamos opciones reales -->
+              <!-- Se rellena desde /api/continentes -->
             </select>
           </label>
         </div>
@@ -36,6 +36,7 @@
           <label>País<br/>
             <select id="filtro-pais">
               <option value="">(Todos)</option>
+              <!-- Se rellena según continente -->
             </select>
           </label>
         </div>
@@ -43,6 +44,7 @@
           <label>Ciudad<br/>
             <select id="filtro-ciudad">
               <option value="">(Todas)</option>
+              <!-- Se rellena según país -->
             </select>
           </label>
         </div>
@@ -53,14 +55,11 @@
         <div>
           <label>Tipo de servicio<br/>
             <select id="filtro-tipo-servicio">
+              <!-- IMPORTANTE:
+                   Este select SE RELLENA desde la API /api/tipos-servicio.
+                   No dejamos opciones fijas para que siempre coincida con la BD.
+              -->
               <option value="">(Todos)</option>
-              <option value="alojamiento">Alojamiento</option>
-              <option value="traslado">Traslado</option>
-              <option value="visita">Visita</option>
-              <option value="excursion">Excursión</option>
-              <option value="vuelo">Vuelo</option>
-              <option value="tren">Tren</option>
-              <option value="otro">Otro</option>
             </select>
           </label>
         </div>
@@ -82,7 +81,7 @@
       <div class="seleccionar-servicio">
         <div>
           <label>Seleccionar servicio<br/>
-            <!-- Más adelante esto se llenará con servicios reales desde la API -->
+            <!-- Se llena desde /api/servicios según los filtros -->
             <select id="select-servicio">
               <option value="">(Seleccionar servicio)</option>
             </select>
@@ -111,6 +110,7 @@
             <th>Fecha</th>
             <th>Servicio</th>
             <th>Precio (USD)</th>
+            <th>Eliminar</th>
           </tr>
         </thead>
         <tbody id="tabla-servicios-body">
@@ -138,21 +138,14 @@
         <button id="btn-crear-servicio" type="button">
           Crear servicio
         </button>
-
-        <button id="btn-calendario-1" type="button">
-          Calendario
-        </button>
-
-        <button id="btn-calendario-2" type="button">
-          Calendario
-        </button>
       </div>
     </section>
 
     <p id="mensaje-error" class="mensaje-error"></p>
   </main>
 
-  <script src="../components/api.js"></script> <!-- si lo usas -->
+  <!-- api.js lo dejamos por si lo usas en otras pantallas -->
+  <script src="../components/api.js"></script>
   <script src="cotizacion-editar.js"></script>
 </body>
 </html>
