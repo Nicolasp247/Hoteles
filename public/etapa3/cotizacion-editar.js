@@ -4,7 +4,8 @@ document.addEventListener("DOMContentLoaded", () => {
   // ====== ID de cotización desde la URL ======
   const params = new URLSearchParams(window.location.search);
   const idCotizacion = params.get("id");
-  const headerIdEl   = document.getElementById("header-id");
+
+  const headerIdEl = document.getElementById("header-id");
   if (headerIdEl) headerIdEl.textContent = idCotizacion ? `#${idCotizacion}` : "(sin id)";
 
   // ====== Referencias a elementos ======
@@ -15,7 +16,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   const wrapperFechaHasta  = document.getElementById("wrapper-fecha-hasta");
   const fechaDesdeInput    = document.getElementById("fecha-desde");
-  const fechaHastaInput    = document.getElementById("fecha-hasta");
+  const fechaHastaInput    = document.getElementById("fecha-hasta"); // (por ahora solo UI)
 
   const selectServicio     = document.getElementById("select-servicio");
   const chkOpcional        = document.getElementById("chk-opcional");
@@ -27,15 +28,39 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnCrearServicio   = document.getElementById("btn-crear-servicio");
   const mensajeErrorEl     = document.getElementById("mensaje-error");
 
+  // ====== Mini-form: refs ======
+  const btnToggleCrearServicio = document.getElementById("btn-toggle-crear-servicio");
+  const panelCrearServicio     = document.getElementById("panel-crear-servicio");
+  const msgCrearServicioEl     = document.getElementById("msg-crear-servicio");
+
+  const nuevoIdProveedorEl     = document.getElementById("nuevo-id-proveedor");
+  const nuevoLinkReservaEl     = document.getElementById("nuevo-link-reserva");
+  const nuevoNombreWtravelEl   = document.getElementById("nuevo-nombre-wtravel");
+  const nuevoTiempoServicioEl  = document.getElementById("nuevo-tiempo-servicio");
+  const nuevoPrivadoEl         = document.getElementById("nuevo-privado");
+  const nuevoDescripcionEl     = document.getElementById("nuevo-descripcion");
+
+  const nuevoCamposDinamicosEl = document.getElementById("nuevo-campos-dinamicos");
+  const btnGuardarServicioRapido = document.getElementById("btn-guardar-servicio-rapido");
+  const btnCancelarServicioRapido = document.getElementById("btn-cancelar-servicio-rapido");
+
   // ====== Estado en memoria ======
   let items        = [];   // líneas de la cotización (ya transformadas)
   let allServicios = [];   // todos los servicios (desde /api/servicios)
   let servicios    = [];   // servicios filtrados para el <select>
   let nextIdLocal  = 1;
 
+  // tipos y proveedores para mini-form
+  let tiposServicioCache = [];     // [{id,nombre}]
+  let proveedoresCache = [];       // [{id,nombre,iniciales}]
+
   // ====== Helpers generales ======
   function mostrarError(msg) {
     if (mensajeErrorEl) mensajeErrorEl.textContent = msg || "";
+  }
+
+  function mostrarErrorCrearServicio(msg) {
+    if (msgCrearServicioEl) msgCrearServicioEl.textContent = msg || "";
   }
 
   function recalcularTotal() {
@@ -83,13 +108,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const anio2 = d2.getFullYear();
 
     if (anio1 === anio2 && mes1 === mes2) {
-      // 12 – 15 de diciembre de 2025
       return `${dia1} – ${dia2} de ${mes1} de ${anio1}`;
     } else if (anio1 === anio2) {
-      // 25 de enero a 02 de febrero de 2026
       return `${dia1} de ${mes1} a ${dia2} de ${mes2} de ${anio1}`;
     } else {
-      // 25 de diciembre de 2025 a 08 de enero de 2026
       return `${dia1} de ${mes1} de ${anio1} a ${dia2} de ${mes2} de ${anio2}`;
     }
   }
@@ -114,7 +136,6 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Mapea una fila devuelta por /api/cotizaciones/:id o por POST /items
-  // a nuestro objeto "item" de la tabla
   function mapRowToItem(row) {
     const tipo = row.tipo_servicio || "";
     const esAlojamiento = esTipoAlojamientoTexto(tipo);
@@ -150,33 +171,6 @@ document.addEventListener("DOMContentLoaded", () => {
     };
   }
 
-  // ====== Guardar orden en backend ======
-  async function guardarOrdenEnBackend() {
-    if (!idCotizacion) return;
-    try {
-      const payload = {
-        orden: items.map((it, index) => ({
-          id_item: it.id_item,
-          orden_dia: index + 1
-        }))
-      };
-
-      const resp = await fetch(`/api/cotizaciones/${idCotizacion}/items/orden`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-
-      const data = await resp.json();
-      if (!resp.ok || !data.ok) {
-        console.warn("No se pudo guardar el orden en backend:", data.mensaje || data.error);
-      }
-      // No hace falta hacer nada más: el orden visual ya lo tenemos en items[]
-    } catch (err) {
-      console.error("Error guardando orden en backend:", err);
-    }
-  }
-
   // ====== Tabla de servicios incluidos ======
   function actualizarTablaDesdeEstado() {
     tablaBody.innerHTML = "";
@@ -189,7 +183,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const trCiudad = document.createElement("tr");
         trCiudad.classList.add("fila-ciudad");
         const tdCiudad = document.createElement("td");
-        tdCiudad.colSpan = 6; // orden, índice, fecha, servicio, precio, eliminar
+        tdCiudad.colSpan = 6;
         tdCiudad.textContent = it.ciudad.toUpperCase();
         trCiudad.appendChild(tdCiudad);
         tablaBody.appendChild(trCiudad);
@@ -222,15 +216,15 @@ document.addEventListener("DOMContentLoaded", () => {
       colIndice.classList.add("celda-indice");
       colIndice.textContent = idx + 1;
 
-      // Columna 3: fecha (texto formateado)
+      // Columna 3: fecha
       const colFecha = document.createElement("td");
       colFecha.textContent = it.fecha || "";
 
-      // Columna 4: servicio (texto)
+      // Columna 4: servicio
       const colServicio = document.createElement("td");
       colServicio.textContent = it.servicioTexto || "";
 
-      // Columna 5: precio (solo lectura)
+      // Columna 5: precio
       const colPrecio = document.createElement("td");
       if (it.precio != null && it.precio !== "") {
         const num = Number(it.precio);
@@ -261,16 +255,13 @@ document.addEventListener("DOMContentLoaded", () => {
     recalcularTotal();
   }
 
-  async function moverItem(idx, delta) {
+  function moverItem(idx, delta) {
     const newIndex = idx + delta;
     if (newIndex < 0 || newIndex >= items.length) return;
-
     const tmp = items[idx];
     items[idx] = items[newIndex];
     items[newIndex] = tmp;
-
     actualizarTablaDesdeEstado();
-    await guardarOrdenEnBackend();
   }
 
   async function eliminarItem(it, index) {
@@ -288,7 +279,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
       items.splice(index, 1);
       actualizarTablaDesdeEstado();
-      // (Opcional) podríamos volver a llamar a guardarOrdenEnBackend() para recompactar orden_dia
     } catch (err) {
       console.error(err);
       mostrarError("No se pudo eliminar el servicio: " + err.message);
@@ -331,7 +321,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       const resp = await fetch(`/api/paises/${idContinente}`);
-      const data = await resp.json(); // array [{id,nombre,id_continente}, ...]
+      const data = await resp.json();
       filtroPais.innerHTML = "";
       const opt0 = document.createElement("option");
       opt0.value = "";
@@ -360,7 +350,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       const resp = await fetch(`/api/ciudades/${idPais}`);
-      const data = await resp.json(); // array [{id,nombre,id_pais}]
+      const data = await resp.json();
       filtroCiudad.innerHTML = "";
       const opt0 = document.createElement("option");
       opt0.value = "";
@@ -402,6 +392,10 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       const resp = await fetch("/api/tipos-servicio");
       const data = await resp.json(); // array [{id,nombre}]
+      if (!Array.isArray(data)) return;
+
+      tiposServicioCache = data;
+
       filtroTipoServicio.innerHTML = "";
       const opt0 = document.createElement("option");
       opt0.value = "";
@@ -423,7 +417,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function esTipoAlojamientoSeleccionado() {
     const opt = filtroTipoServicio.options[filtroTipoServicio.selectedIndex];
     if (!opt) return false;
-    const texto = opt.textContent.toLowerCase();
+    const texto = (opt.textContent || "").toLowerCase();
     return texto.includes("aloj");
   }
 
@@ -439,17 +433,22 @@ document.addEventListener("DOMContentLoaded", () => {
   filtroTipoServicio.addEventListener("change", () => {
     actualizarVisibilidadFechaHasta();
     filtrarServicios();
+
+    // si el panel está abierto, actualizamos campos dinámicos al vuelo
+    if (panelCrearServicio && panelCrearServicio.style.display !== "none") {
+      renderCamposDinamicosSegunTipo();
+    }
   });
 
   // ==============================
-  //   BLOQUE 3: Servicios
+  //   BLOQUE 3: Servicios (para selector)
   // ==============================
   async function cargarTodosLosServicios() {
     try {
       const resp = await fetch("/api/servicios");
-      const data = await resp.json();  // array de servicios
+      const data = await resp.json();
       if (!Array.isArray(data)) return;
-      allServicios = data;             // se espera que venga con id_continente, id_pais, id_ciudad, id_tipo
+      allServicios = data;
       filtrarServicios();
     } catch (err) {
       console.error("Error cargando servicios", err);
@@ -483,7 +482,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     servicios.forEach((s) => {
       const opt = document.createElement("option");
-      opt.value = s.id; // servicio.id
+      opt.value = s.id;
       opt.textContent = s.nombre_wtravel || `Servicio #${s.id}`;
       selectServicio.appendChild(opt);
     });
@@ -497,21 +496,11 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       const resp = await fetch(`/api/cotizaciones/${idCotizacion}`);
       const data = await resp.json();
-      if (!data.ok) {
-        console.warn("No se pudo cargar cotización:", data.mensaje);
-        return;
-      }
-
-      // NUEVO: usar el nombre_cotizacion en el título
-      const cab = data.cabecera || data.cotizacion;
-      if (cab && cab.nombre_cotizacion && headerIdEl) {
-        headerIdEl.textContent = cab.nombre_cotizacion;
-      }
+      if (!data.ok) return;
 
       const lista = data.items || [];
       nextIdLocal = 1;
       items = lista.map((row) => mapRowToItem(row));
-
       actualizarTablaDesdeEstado();
     } catch (err) {
       console.error("Error cargando cotización existente", err);
@@ -548,7 +537,6 @@ document.addEventListener("DOMContentLoaded", () => {
           id_servicio: Number(idServicioSeleccionado),
           fecha_servicio: fechaDesde,
           es_opcional: esOpcional
-          // precio_usd lo calculará el backend cuando tengamos módulo de precios
         })
       });
 
@@ -561,16 +549,441 @@ document.addEventListener("DOMContentLoaded", () => {
       const nuevoItem = mapRowToItem(row);
       items.push(nuevoItem);
       actualizarTablaDesdeEstado();
-      await guardarOrdenEnBackend(); // para mantener orden_dia coherente
     } catch (err) {
       console.error(err);
       mostrarError("No se pudo insertar el servicio: " + err.message);
     }
   });
 
-  btnCrearServicio.addEventListener("click", () => {
-    window.location.href = "../etapa2/servicios-crear.html";
-  });
+  // ==============================
+  //   MINI-FORM: Proveedores + panel
+  // ==============================
+  async function cargarProveedores() {
+    try {
+      const resp = await fetch("/api/proveedores");
+      const data = await resp.json();
+      if (!data.ok || !Array.isArray(data.proveedores)) {
+        throw new Error(data.mensaje || "Respuesta inválida de /api/proveedores");
+      }
+      proveedoresCache = data.proveedores;
+
+      nuevoIdProveedorEl.innerHTML = "";
+      const opt0 = document.createElement("option");
+      opt0.value = "";
+      opt0.textContent = "(Seleccionar proveedor)";
+      nuevoIdProveedorEl.appendChild(opt0);
+
+      proveedoresCache.forEach((p) => {
+        const opt = document.createElement("option");
+        opt.value = p.id;
+        opt.textContent = `${p.nombre} (${p.iniciales})`;
+        nuevoIdProveedorEl.appendChild(opt);
+      });
+    } catch (err) {
+      console.error(err);
+      mostrarErrorCrearServicio("No se pudieron cargar los proveedores.");
+    }
+  }
+
+  function abrirPanelCrearServicio() {
+    if (!panelCrearServicio) return;
+
+    mostrarErrorCrearServicio("");
+    panelCrearServicio.style.display = "";
+
+    // si proveedores no están cargados, los cargamos
+    if (!proveedoresCache.length) {
+      cargarProveedores();
+    }
+
+    // cada vez que abres, armamos campos dinámicos según tipo actual
+    renderCamposDinamicosSegunTipo();
+  }
+
+  function cerrarPanelCrearServicio() {
+    if (!panelCrearServicio) return;
+    panelCrearServicio.style.display = "none";
+    limpiarMiniForm();
+  }
+
+  function togglePanelCrearServicio() {
+    if (!panelCrearServicio) return;
+    const abierto = panelCrearServicio.style.display !== "none";
+    if (abierto) cerrarPanelCrearServicio();
+    else abrirPanelCrearServicio();
+  }
+
+  function limpiarMiniForm() {
+    if (nuevoIdProveedorEl) nuevoIdProveedorEl.value = "";
+    if (nuevoLinkReservaEl) nuevoLinkReservaEl.value = "";
+    if (nuevoNombreWtravelEl) nuevoNombreWtravelEl.value = "";
+    if (nuevoTiempoServicioEl) nuevoTiempoServicioEl.value = "";
+    if (nuevoPrivadoEl) nuevoPrivadoEl.value = "0";
+    if (nuevoDescripcionEl) nuevoDescripcionEl.value = "";
+    if (nuevoCamposDinamicosEl) nuevoCamposDinamicosEl.innerHTML = "";
+    mostrarErrorCrearServicio("");
+  }
+
+  // Este botón abre/cierra el panel
+  if (btnToggleCrearServicio) {
+    btnToggleCrearServicio.addEventListener("click", togglePanelCrearServicio);
+  }
+
+  // También el botón de abajo "Crear servicio" abre el panel
+  if (btnCrearServicio) {
+    btnCrearServicio.addEventListener("click", togglePanelCrearServicio);
+  }
+
+  if (btnCancelarServicioRapido) {
+    btnCancelarServicioRapido.addEventListener("click", cerrarPanelCrearServicio);
+  }
+
+  // ==============================
+  //   MINI-FORM: campos dinámicos según tipo
+  // ==============================
+  function getNombreTipoSeleccionado() {
+    const opt = filtroTipoServicio?.options?.[filtroTipoServicio.selectedIndex];
+    return opt ? (opt.textContent || "").trim() : "";
+  }
+
+  function renderCamposDinamicosSegunTipo() {
+    if (!nuevoCamposDinamicosEl) return;
+
+    const nombreTipo = getNombreTipoSeleccionado().toLowerCase();
+
+    // Si no hay tipo seleccionado, pedimos que lo seleccione
+    if (!filtroTipoServicio.value) {
+      nuevoCamposDinamicosEl.innerHTML = `
+        <p class="mensaje-error">
+          Selecciona primero el <b>Tipo de servicio</b> arriba para poder crear el servicio rápido.
+        </p>
+      `;
+      return;
+    }
+
+    // Helpers para armar inputs
+    const input = (id, label, placeholder = "", type = "text") => `
+      <label>${label}<br/>
+        <input type="${type}" id="${id}" placeholder="${placeholder}" />
+      </label>
+    `;
+
+    const number = (id, label, min = 0, step = 1) => `
+      <label>${label}<br/>
+        <input type="number" id="${id}" min="${min}" step="${step}" />
+      </label>
+    `;
+
+    const select = (id, label, optionsHtml) => `
+      <label>${label}<br/>
+        <select id="${id}">${optionsHtml}</select>
+      </label>
+    `;
+
+    // Alojamiento
+    if (nombreTipo.includes("aloj")) {
+      nuevoCamposDinamicosEl.innerHTML = `
+        <h4>Datos de alojamiento</h4>
+        <div class="grid-2">
+          ${number("aloja-noches", "Noches", 1, 1)}
+          ${number("aloja-habitaciones", "Habitaciones", 1, 1)}
+
+          ${select("aloja-regimen", "Régimen", `
+            <option value="">(Seleccionar)</option>
+            <option value="SOLO_ALOJAMIENTO">Solo alojamiento</option>
+            <option value="ALOJAMIENTO_DESAYUNO">Alojamiento y desayuno</option>
+            <option value="TODO_INCLUIDO">Todo incluido</option>
+          `)}
+
+          ${input("aloja-proveedor-hotel", "Proveedor hotel (código)", "Ej: AEI")}
+          
+          ${select("aloja-categoria-hotel", "Categoría hotel", `
+            <option value="">(Seleccionar)</option>
+            <option value="3_ECONOMICO">3★ Económico</option>
+            <option value="3_SUPERIOR">3★ Superior</option>
+            <option value="4_ECONOMICO">4★ Económico</option>
+            <option value="4_SUPERIOR">4★ Superior</option>
+            <option value="5_ECONOMICO">5★ Económico</option>
+            <option value="5_SUPERIOR">5★ Superior</option>
+            <option value="LUJO_ECONOMICO">Lujo Económico</option>
+            <option value="LUJO_SUPERIOR">Lujo Superior</option>
+          `)}
+
+          ${select("aloja-categoria-hab", "Categoría habitación", `
+            <option value="">(Seleccionar)</option>
+            <option value="ESTANDAR">Estándar</option>
+            <option value="SUPERIOR">Superior</option>
+            <option value="SUITE">Suite</option>
+            <option value="OTRO">Otro (especificar)</option>
+          `)}
+
+          <label id="wrap-aloja-categoria-hab-otro" style="display:none;">
+            ¿Cuál?<br/>
+            <input type="text" id="aloja-categoria-hab-otro" placeholder="Ej: Deluxe King, Junior Suite..." />
+          </label>
+        </div>
+      `;
+
+      // lógica "otro"
+      setTimeout(() => {
+        const sel = document.getElementById("aloja-categoria-hab");
+        const wrap = document.getElementById("wrap-aloja-categoria-hab-otro");
+        if (sel && wrap) {
+          sel.addEventListener("change", () => {
+            wrap.style.display = sel.value === "OTRO" ? "" : "none";
+          });
+        }
+      }, 0);
+
+      return;
+    }
+
+    // Boleto de entrada
+    if (nombreTipo.includes("boleto")) {
+      nuevoCamposDinamicosEl.innerHTML = `
+        <h4>Datos de boleto de entrada</h4>
+        <div class="grid-2">
+          ${input("be-lugar", "Lugar", "Ej: Museo Louvre")}
+          ${input("be-tipo-entrada", "Tipo de entrada", "Ej: Estándar, VIP")}
+          ${select("be-audioguia", "Audioguía", `
+            <option value="0">No</option>
+            <option value="1">Sí</option>
+          `)}
+          ${input("be-idioma", "Idioma", "Ej: español")}
+        </div>
+      `;
+      return;
+    }
+
+    // Vuelo
+    if (nombreTipo.includes("vuelo")) {
+      nuevoCamposDinamicosEl.innerHTML = `
+        <h4>Datos de vuelo</h4>
+        <div class="grid-2">
+          ${input("vu-origen", "Origen", "Ej: Bogotá")}
+          ${input("vu-destino", "Destino", "Ej: Madrid")}
+          ${number("vu-escalas", "Escalas (#)", 0, 1)}
+          ${input("vu-clase", "Clase", "Ej: Económica, Business")}
+          ${input("vu-equipaje", "Equipaje", "Ej: 23kg+10kg+6kg")}
+        </div>
+        <p style="opacity:.8;margin-top:6px;">
+          Nota: “asientos reservados” lo manejamos por ahora solo en Tren (si luego lo quieres en Vuelo, se agrega fácil).
+        </p>
+      `;
+      return;
+    }
+
+    // Tren
+    if (nombreTipo.includes("tren")) {
+      nuevoCamposDinamicosEl.innerHTML = `
+        <h4>Datos de tren</h4>
+        <div class="grid-2">
+          ${input("tr-origen", "Origen", "Ej: Madrid")}
+          ${input("tr-destino", "Destino", "Ej: Barcelona")}
+          ${number("tr-escalas", "Escalas (#)", 0, 1)}
+          ${input("tr-clase", "Clase", "Ej: Económica, Primera")}
+          ${input("tr-equipaje", "Equipaje", "Ej: 10kg+6kg")}
+          ${select("tr-sillas", "Asientos reservados", `
+            <option value="0">No</option>
+            <option value="1">Sí</option>
+          `)}
+        </div>
+      `;
+      return;
+    }
+
+    // Traslado (simple)
+    if (nombreTipo.includes("traslado")) {
+      nuevoCamposDinamicosEl.innerHTML = `
+        <h4>Datos de traslado</h4>
+        <p style="opacity:.8;margin-top:-6px;">
+          Por ahora el texto final lo armamos con <b>Nombre WTravel</b> + descripción.
+          Si luego quieres subtabla “traslado”, lo conectamos.
+        </p>
+        <div class="grid-2">
+          ${input("tras-origen", "Origen", "Ej: Hotel en Barcelona")}
+          ${input("tras-destino", "Destino", "Ej: Aeropuerto")}
+        </div>
+      `;
+      return;
+    }
+
+    // Visita / Excursión (simple)
+    if (nombreTipo.includes("visita") || nombreTipo.includes("excurs")) {
+      nuevoCamposDinamicosEl.innerHTML = `
+        <h4>Datos de ${getNombreTipoSeleccionado()}</h4>
+        <p style="opacity:.8;margin-top:-6px;">
+          En esta primera versión: usa <b>Tiempo del servicio</b> y <b>Descripción</b> para dejarlo perfecto.
+          Después, si quieres, lo normalizamos en subtabla.
+        </p>
+        <div class="grid-2">
+          ${input("vx-idioma", "Idioma", "Ej: español")}
+          ${select("vx-tipo-guia", "Guía / Audioguía", `
+            <option value="">(Opcional)</option>
+            <option value="GUIA">Guía</option>
+            <option value="AUDIOGUIA">Audioguía</option>
+          `)}
+        </div>
+      `;
+      return;
+    }
+
+    // Default
+    nuevoCamposDinamicosEl.innerHTML = `
+      <p style="opacity:.8;">
+        No hay campos especiales para este tipo. Con los campos comunes arriba es suficiente.
+      </p>
+    `;
+  }
+
+  // ==============================
+  //   MINI-FORM: Guardar servicio
+  // ==============================
+  function validarMiniFormBase() {
+    if (!filtroTipoServicio.value) return "Selecciona el tipo de servicio arriba.";
+    if (!filtroCiudad.value) return "Selecciona la ciudad arriba.";
+    if (!nuevoIdProveedorEl.value) return "Selecciona un proveedor.";
+    if (!nuevoNombreWtravelEl.value.trim()) return "Escribe el Nombre WTravel.";
+    return null;
+  }
+
+  function buildPayloadServicio() {
+    const id_tipo = Number(filtroTipoServicio.value);
+    const id_ciudad = Number(filtroCiudad.value);
+
+    const payload = {
+      id_tipo,
+      id_proveedor: Number(nuevoIdProveedorEl.value),
+      id_ciudad,
+      nombre_wtravel: nuevoNombreWtravelEl.value.trim(),
+      tiempo_servicio: nuevoTiempoServicioEl.value ? nuevoTiempoServicioEl.value.trim() : null,
+      privado: nuevoPrivadoEl.value === "1",
+      descripcion: nuevoDescripcionEl.value ? nuevoDescripcionEl.value.trim() : null,
+      link_reserva: nuevoLinkReservaEl.value ? nuevoLinkReservaEl.value.trim() : null
+    };
+
+    const nombreTipo = getNombreTipoSeleccionado().toLowerCase();
+
+    // Alojamiento
+    if (nombreTipo.includes("aloj")) {
+      const categoriaHabSel = document.getElementById("aloja-categoria-hab");
+      let categoriaHab = categoriaHabSel ? categoriaHabSel.value : null;
+      if (categoriaHab === "OTRO") {
+        const otro = document.getElementById("aloja-categoria-hab-otro");
+        categoriaHab = otro && otro.value.trim() ? otro.value.trim() : "OTRO";
+      }
+
+      payload.alojamiento = {
+        noches: Number(document.getElementById("aloja-noches")?.value || 1),
+        habitaciones: Number(document.getElementById("aloja-habitaciones")?.value || 1),
+        regimen: document.getElementById("aloja-regimen")?.value || null,
+        categoria_hotel: document.getElementById("aloja-categoria-hotel")?.value || null,
+        categoria_hab: categoriaHab || null,
+        proveedor_hotel: document.getElementById("aloja-proveedor-hotel")?.value?.trim() || null
+      };
+    }
+
+    // Boleto entrada
+    if (nombreTipo.includes("boleto")) {
+      payload.boleto_entrada = {
+        nombre_lugar: document.getElementById("be-lugar")?.value?.trim() || null,
+        tipo_entrada: document.getElementById("be-tipo-entrada")?.value?.trim() || null,
+        audioguia: (document.getElementById("be-audioguia")?.value === "1"),
+        idioma: document.getElementById("be-idioma")?.value?.trim() || null
+      };
+    }
+
+    // Vuelo
+    if (nombreTipo.includes("vuelo")) {
+      payload.vuelo = {
+        origen: document.getElementById("vu-origen")?.value?.trim() || "",
+        destino: document.getElementById("vu-destino")?.value?.trim() || "",
+        escalas: Number(document.getElementById("vu-escalas")?.value || 0),
+        clase: document.getElementById("vu-clase")?.value?.trim() || null,
+        equipaje: document.getElementById("vu-equipaje")?.value?.trim() || null
+      };
+    }
+
+    // Tren
+    if (nombreTipo.includes("tren")) {
+      payload.tren = {
+        origen: document.getElementById("tr-origen")?.value?.trim() || "",
+        destino: document.getElementById("tr-destino")?.value?.trim() || "",
+        escalas: Number(document.getElementById("tr-escalas")?.value || 0),
+        clase: document.getElementById("tr-clase")?.value?.trim() || null,
+        equipaje: document.getElementById("tr-equipaje")?.value?.trim() || null,
+        sillas_reservadas: (document.getElementById("tr-sillas")?.value === "1")
+      };
+    }
+
+    // Traslado/Visita/Excursión:
+    // En esta versión lo dejamos en nombre/descripcion/tiempo y no subtabla.
+    // Si luego lo quieres 100% estructurado, lo hacemos con tabla propia.
+
+    return payload;
+  }
+
+  async function guardarServicioRapido() {
+    mostrarErrorCrearServicio("");
+
+    const err = validarMiniFormBase();
+    if (err) {
+      mostrarErrorCrearServicio(err);
+      return;
+    }
+
+    // Validaciones extra rápidas por subtipo
+    const nombreTipo = getNombreTipoSeleccionado().toLowerCase();
+    if (nombreTipo.includes("vuelo")) {
+      const o = document.getElementById("vu-origen")?.value?.trim();
+      const d = document.getElementById("vu-destino")?.value?.trim();
+      if (!o || !d) return mostrarErrorCrearServicio("En Vuelo: origen y destino son obligatorios.");
+    }
+    if (nombreTipo.includes("tren")) {
+      const o = document.getElementById("tr-origen")?.value?.trim();
+      const d = document.getElementById("tr-destino")?.value?.trim();
+      if (!o || !d) return mostrarErrorCrearServicio("En Tren: origen y destino son obligatorios.");
+    }
+
+    const payload = buildPayloadServicio();
+
+    try {
+      btnGuardarServicioRapido.disabled = true;
+      btnGuardarServicioRapido.textContent = "Guardando...";
+
+      const resp = await fetch("/api/servicios", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await resp.json();
+      if (!resp.ok || !data.ok) {
+        throw new Error(data.mensaje || data.error || "Error creando servicio.");
+      }
+
+      const nuevoId = data.id_servicio;
+
+      // refrescamos servicios, filtramos y seleccionamos el nuevo
+      await cargarTodosLosServicios();
+      filtrarServicios();
+      selectServicio.value = String(nuevoId);
+
+      // cerramos panel
+      cerrarPanelCrearServicio();
+
+    } catch (e) {
+      console.error(e);
+      mostrarErrorCrearServicio("No se pudo crear el servicio: " + e.message);
+    } finally {
+      btnGuardarServicioRapido.disabled = false;
+      btnGuardarServicioRapido.textContent = "Guardar servicio";
+    }
+  }
+
+  if (btnGuardarServicioRapido) {
+    btnGuardarServicioRapido.addEventListener("click", guardarServicioRapido);
+  }
 
   // ==============================
   //   INICIALIZACIÓN

@@ -2,15 +2,15 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <title>Cotizador – Menú de cotizaciones</title>
+  <title>Cotizador – Cotizaciones</title>
 
-  <!-- Reutilizamos estilos generales de etapa 3 si quieres -->
+  <!-- De momento reutilizamos el CSS de cotización-editar
+       Más adelante lo refinamos o creamos uno general de etapa 3 -->
   <link rel="stylesheet" href="cotizacion-editar.css" />
-  <link rel="stylesheet" href="index-etapa3.css" />
 </head>
 <body>
   <header>
-    <h1>Cotizador – Menú de cotizaciones</h1>
+    <h1>Cotizador – Cotizaciones</h1>
     <nav>
       <a href="../index.html">Inicio</a> |
       <a href="cotizacion-crear.html">Nueva cotización</a>
@@ -19,52 +19,48 @@
   </header>
 
   <main>
-    <!-- Bloque 1: Crear nueva -->
-    <section class="sec-nueva">
+    <!-- 1. Crear nueva cotización -->
+    <section>
       <h2>1. Crear nueva cotización</h2>
       <p>
-        Usa este botón para iniciar una nueva cotización desde cero.
+        Usa este botón para iniciar una cotización desde cero con los datos del pasajero y las fechas del viaje.
       </p>
-      <button id="btn-nueva-cotizacion" type="button">
-        + Crear nueva cotización
+      <button id="btn-nueva" type="button">
+        ➕ Crear nueva cotización
       </button>
     </section>
 
-    <!-- Bloque 2: Buscar / editar existentes -->
-    <section class="sec-listado">
-      <h2>2. Buscar y editar cotizaciones existentes</h2>
+    <!-- 2. Buscar y editar cotizaciones existentes -->
+    <section>
+      <h2>2. Buscar cotización existente</h2>
 
-      <div class="buscador-wrapper">
-        <label>
-          Buscar por nombre, pasajero o agente<br />
-          <input
-            type="text"
-            id="txt-buscar"
-            placeholder="Ej: 2602 NT Juan, o 'AREVALO', o 'WT'..."
-          />
+      <div class="busqueda-wrapper">
+        <label for="txt-buscar">
+          Buscar por nombre de cotización, pasajero o agente:
         </label>
-        <button type="button" id="btn-limpiar-busqueda">Limpiar</button>
+        <input
+          type="text"
+          id="txt-buscar"
+          placeholder="Ej: 2512 WT Nico, Juan Pérez, NT..."
+        />
       </div>
 
-      <div class="tabla-wrapper">
-        <table class="tabla-cotizaciones">
-          <thead>
-            <tr>
-              <th>Nombre de la cotización</th>
-              <th>Pasajero</th>
-              <th>Agente</th>
-              <th>Fecha viaje</th>
-              <th>Personas</th>
-              <th>Acción</th>
-            </tr>
-          </thead>
-          <tbody id="tbody-cotizaciones">
-            <!-- Filas generadas por JS -->
-          </tbody>
-        </table>
-      </div>
+      <table class="tabla-servicios">
+        <thead>
+          <tr>
+            <th>Nombre de cotización</th>
+            <th>Fecha viaje</th>
+            <th>Pasajeros</th>
+            <th>Agente</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="tabla-cotizaciones-body">
+          <!-- Filas generadas por JS -->
+        </tbody>
+      </table>
 
-      <p id="mensaje-listado" class="mensaje-listado"></p>
+      <p id="mensaje-error" class="mensaje-error"></p>
     </section>
   </main>
 

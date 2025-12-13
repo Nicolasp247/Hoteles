@@ -6,44 +6,85 @@ const db = require("../../db"); // pool mysql2/promise
 // =======================
 // Helpers
 // =======================
-
-// Convierte a entero o 0 si viene vacío / null
 function intOrZero(value) {
   const n = parseInt(value, 10);
   return Number.isNaN(n) ? 0 : n;
 }
 
-// Genera el nombre automático de la cotización
-// Formato: <YY><MM> <Agente> <Nombre pasajero> <N personas>
 function generarNombreCotizacion(fechaViaje, agente, nombrePasajero, totalPasajeros) {
-  // fechaViaje se espera en formato 'YYYY-MM-DD'
-  const [yearStr, monthStr] = fechaViaje.split("-"); // ["2026","02","15"...]
-  const yy = yearStr.slice(-2);                      // "26"
-  const mm = monthStr.padStart(2, "0");              // "02"
-
+  const [yearStr, monthStr] = fechaViaje.split("-");
+  const yy = yearStr.slice(-2);
+  const mm = monthStr.padStart(2, "0");
   const sufijo = totalPasajeros === 1 ? "persona" : "personas";
   return `${yy}${mm} ${agente} ${nombrePasajero} ${totalPasajeros} ${sufijo}`;
 }
 
-// Helper para saber si un tipo es alojamiento según el texto
 function esTipoAlojamiento(nombreTipo) {
   return (nombreTipo || "").toLowerCase().includes("aloj");
 }
 
-// Helper para saber si un tipo no lleva precio (vuelo / tren)
 function esTipoSinPrecio(nombreTipo) {
   const t = (nombreTipo || "").toLowerCase();
   return t.includes("vuelo") || t.includes("tren");
+}
+
+// Texto “Directo / X escala(s)”
+function textoEscalas(escalas) {
+  const n = Number(escalas);
+  if (!Number.isFinite(n) || n <= 0) return "directo";
+  return n === 1 ? "1 escala" : `${n} escalas`;
+}
+
+function buildTextoVuelo(row) {
+  // si no hay subtabla vuelo, devolvemos null para caer al nombre_servicio
+  if (!row.vuelo_origen && !row.vuelo_destino) return null;
+
+  const base = `Vuelo ${textoEscalas(row.vuelo_escalas)} de ${row.vuelo_origen} a ${row.vuelo_destino}`;
+  const clase = row.vuelo_clase ? `, clase ${row.vuelo_clase}` : "";
+  const equipaje = row.vuelo_equipaje ? `, equipaje ${row.vuelo_equipaje}` : "";
+  return `${base}${clase}${equipaje}`;
+}
+
+function buildTextoTren(row) {
+  if (!row.tren_origen && !row.tren_destino) return null;
+
+  const base = `Tren ${textoEscalas(row.tren_escalas)} de ${row.tren_origen} a ${row.tren_destino}`;
+  const clase = row.tren_clase ? `, clase ${row.tren_clase}` : "";
+  const equipaje = row.tren_equipaje ? `, equipaje ${row.tren_equipaje}` : "";
+  let sillas = "";
+  if (row.tren_sillas_reservadas != null) {
+    sillas = row.tren_sillas_reservadas ? `, asientos reservados` : `, sin asientos reservados`;
+  }
+  return `${base}${clase}${equipaje}${sillas}`;
+}
+
+// Construye servicio_texto final (con prefijos + subtipos)
+function buildServicioTexto(row) {
+  const tipo = row.tipo_servicio || "";
+
+  // 1) Base: preferimos subtexto si existe
+  const textoVuelo = buildTextoVuelo(row);
+  const textoTren  = buildTextoTren(row);
+
+  let base = row.titulo_override || textoVuelo || textoTren || row.nombre_servicio || "";
+
+  // 2) Prefijo alojamiento
+  if (esTipoAlojamiento(tipo)) {
+    base = `Alojamiento: ${base}`;
+  }
+
+  // 3) Prefijo opcional
+  if (row.es_opcional) {
+    base = `Opcional: ${base}`;
+  }
+
+  return base;
 }
 
 // =======================
 // Rutas
 // =======================
 
-/**
- * POST /api/cotizaciones
- * Crea la cabecera de una cotización.
- */
 router.post("/cotizaciones", async (req, res) => {
   try {
     const {
@@ -55,12 +96,11 @@ router.post("/cotizaciones", async (req, res) => {
       ninos_3_11,
       infantes_0_2,
       categorias,
-      fecha_viaje,   // "YYYY-MM-DD"
+      fecha_viaje,
       moneda_id,
       nota
     } = req.body || {};
 
-    // Validaciones básicas
     if (!agente || !nombre_pasajero || !fecha_viaje) {
       return res.status(400).json({
         ok: false,
@@ -68,7 +108,6 @@ router.post("/cotizaciones", async (req, res) => {
       });
     }
 
-    // Pasajeros
     const adultos65   = intOrZero(adultos_65);
     const adultos1964 = intOrZero(adultos_19_64);
     const jovenes1218 = intOrZero(jovenes_12_18);
@@ -85,7 +124,6 @@ router.post("/cotizaciones", async (req, res) => {
       });
     }
 
-    // Nombre automático
     const nombre_cotizacion = generarNombreCotizacion(
       fecha_viaje,
       agente,
@@ -93,7 +131,6 @@ router.post("/cotizaciones", async (req, res) => {
       total_pasajeros
     );
 
-    // Insert
     const sql = `
       INSERT INTO cotizacion (
         agente,
@@ -158,10 +195,6 @@ router.post("/cotizaciones", async (req, res) => {
   }
 });
 
-/**
- * GET /api/cotizaciones
- * Listado de cabeceras
- */
 router.get("/cotizaciones", async (_req, res) => {
   try {
     const [rows] = await db.execute(`
@@ -177,10 +210,7 @@ router.get("/cotizaciones", async (_req, res) => {
       ORDER BY fecha_creacion DESC, id_cotizacion DESC
     `);
 
-    return res.json({
-      ok: true,
-      cotizaciones: rows
-    });
+    return res.json({ ok: true, cotizaciones: rows });
   } catch (error) {
     console.error("Error al listar cotizaciones:", error);
     return res.status(500).json({
@@ -191,10 +221,6 @@ router.get("/cotizaciones", async (_req, res) => {
   }
 });
 
-/**
- * GET /api/cotizaciones/:id
- * Cabecera + items (con tipo, ciudad, noches y precio_usd ya filtrado para vuelo/tren)
- */
 router.get("/cotizaciones/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
@@ -202,7 +228,6 @@ router.get("/cotizaciones/:id", async (req, res) => {
       return res.status(400).json({ ok: false, mensaje: "ID de cotización inválido." });
     }
 
-    // Cabecera
     const [cabRows] = await db.execute(
       "SELECT * FROM cotizacion WHERE id_cotizacion = ?",
       [id]
@@ -212,7 +237,6 @@ router.get("/cotizaciones/:id", async (req, res) => {
     }
     const cabecera = cabRows[0];
 
-    // Items + datos de servicio / tipo / ciudad / alojamiento
     const [itemRowsRaw] = await db.execute(
       `
       SELECT
@@ -228,7 +252,6 @@ router.get("/cotizaciones/:id", async (req, res) => {
         ci.clase_override,
         ci.idioma_override,
         ci.nota_linea,
-        -- precio_usd, pero dejando Vuelo / Tren sin precio
         CASE
           WHEN LOWER(ts.nombre) LIKE '%vuelo%'
             OR LOWER(ts.nombre) LIKE '%tren%'
@@ -240,42 +263,44 @@ router.get("/cotizaciones/:id", async (req, res) => {
         s.descripcion           AS descripcion_servicio,
         ts.nombre               AS tipo_servicio,
         c.nombre                AS ciudad,
-        a.noches                AS noches_alojamiento
+        a.noches                AS noches_alojamiento,
+
+        -- Subtablas para formateo
+        v.origen  AS vuelo_origen,
+        v.destino AS vuelo_destino,
+        v.escalas AS vuelo_escalas,
+        v.clase   AS vuelo_clase,
+        v.equipaje AS vuelo_equipaje,
+
+        t.origen  AS tren_origen,
+        t.destino AS tren_destino,
+        t.escalas AS tren_escalas,
+        t.clase   AS tren_clase,
+        t.equipaje AS tren_equipaje,
+        t.sillas_reservadas AS tren_sillas_reservadas
+
       FROM cotizacion_item ci
       JOIN servicio     s  ON s.id        = ci.id_servicio
       JOIN tiposervicio ts ON ts.id       = s.id_tipo
       JOIN ciudad       c  ON c.id        = s.id_ciudad
       LEFT JOIN alojamiento a ON a.id_servicio = s.id
+      LEFT JOIN vuelo v       ON v.id_servicio = s.id
+      LEFT JOIN tren  t       ON t.id_servicio = s.id
       WHERE ci.id_cotizacion = ?
       ORDER BY ci.fecha_servicio ASC, ci.orden_dia ASC, ci.id_item ASC
       `,
       [id]
     );
 
-    const items = itemRowsRaw.map(row => {
-      let base = row.titulo_override || row.nombre_servicio || "";
-      const tipo = row.tipo_servicio || "";
-
-      // Prefijo de alojamiento
-      if (esTipoAlojamiento(tipo)) {
-        base = `Alojamiento: ${base}`;
-      }
-
-      // Prefijo de opcional
-      if (row.es_opcional) {
-        base = `Opcional: ${base}`;
-      }
-
-      return {
-        ...row,
-        servicio_texto: base
-      };
-    });
+    const items = itemRowsRaw.map(row => ({
+      ...row,
+      servicio_texto: buildServicioTexto(row)
+    }));
 
     return res.json({
       ok: true,
-      cotizacion: cabecera, // compatibilidad
-      cabecera,             // nombre más semántico
+      cotizacion: cabecera,
+      cabecera,
       items
     });
 
@@ -289,13 +314,6 @@ router.get("/cotizaciones/:id", async (req, res) => {
   }
 });
 
-/**
- * POST /api/cotizaciones/:id/items
- * Inserta un servicio en una cotización
- * Ahora:
- *  - Calcula precio_usd según la tabla servicio_precio_mes y el mes de fecha_servicio.
- *  - Para Vuelo / Tren deja precio_usd en NULL.
- */
 router.post("/cotizaciones/:id/items", async (req, res) => {
   try {
     const idCotizacion = parseInt(req.params.id, 10);
@@ -305,15 +323,15 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
 
     const {
       id_servicio,
-      fecha_servicio,      // "YYYY-MM-DD"
+      fecha_servicio,
       es_opcional,
       operador_mostrado,
       link_operador,
       titulo_override,
       clase_override,
       idioma_override,
-      nota_linea
-      // precio_usd: se IGNORA, lo calculamos nosotros
+      nota_linea,
+      precio_usd
     } = req.body || {};
 
     if (!id_servicio || !fecha_servicio) {
@@ -325,51 +343,12 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
 
     const esOpcional = es_opcional ? 1 : 0;
 
-    // 1) Obtenemos el tipo de servicio para saber si es vuelo/tren
-    const [servRows] = await db.execute(
-      `
-      SELECT s.id, ts.nombre AS tipo_servicio
-      FROM servicio s
-      JOIN tiposervicio ts ON ts.id = s.id_tipo
-      WHERE s.id = ?
-      `,
-      [id_servicio]
-    );
-
-    if (!servRows.length) {
-      return res.status(400).json({
-        ok: false,
-        mensaje: "Servicio no encontrado."
-      });
+    let precioNormalizado = null;
+    if (precio_usd !== undefined && precio_usd !== null && precio_usd !== "") {
+      const n = Number(precio_usd);
+      if (!Number.isNaN(n)) precioNormalizado = n;
     }
 
-    const tipoServicioNombre = servRows[0].tipo_servicio || "";
-    const esSinPrecio = esTipoSinPrecio(tipoServicioNombre);
-
-    // 2) Calculamos precio_usd_final según mes (si NO es vuelo/tren)
-    let precio_usd_final = null;
-
-    if (!esSinPrecio) {
-      // Tomamos el mes de fecha_servicio
-      const [precioRows] = await db.execute(
-        `
-        SELECT spm.precio_usd
-        FROM servicio_precio_mes spm
-        WHERE spm.id_servicio = ?
-          AND spm.mes = MONTH(?)
-        `,
-        [id_servicio, fecha_servicio]
-      );
-
-      if (precioRows.length) {
-        precio_usd_final = precioRows[0].precio_usd;
-      } else {
-        // Si no hay precio definido para ese mes, lo dejamos en NULL.
-        precio_usd_final = null;
-      }
-    }
-
-    // 3) Siguiente orden dentro del día
     const [maxRows] = await db.execute(
       `
       SELECT COALESCE(MAX(orden_dia), 0) AS maxOrden
@@ -380,7 +359,6 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
     );
     const siguienteOrden = (maxRows[0]?.maxOrden || 0) + 1;
 
-    // 4) Insert item
     const [result] = await db.execute(
       `
       INSERT INTO cotizacion_item (
@@ -411,13 +389,12 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
         clase_override || null,
         idioma_override || null,
         nota_linea || null,
-        precio_usd_final
+        precioNormalizado
       ]
     );
 
     const idItem = result.insertId;
 
-    // 5) Volver a leer el item con datos de servicio / tipo / ciudad / alojamiento
     const [rows] = await db.execute(
       `
       SELECT
@@ -444,33 +421,40 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
         s.descripcion           AS descripcion_servicio,
         ts.nombre               AS tipo_servicio,
         c.nombre                AS ciudad,
-        a.noches                AS noches_alojamiento
+        a.noches                AS noches_alojamiento,
+
+        v.origen  AS vuelo_origen,
+        v.destino AS vuelo_destino,
+        v.escalas AS vuelo_escalas,
+        v.clase   AS vuelo_clase,
+        v.equipaje AS vuelo_equipaje,
+
+        t.origen  AS tren_origen,
+        t.destino AS tren_destino,
+        t.escalas AS tren_escalas,
+        t.clase   AS tren_clase,
+        t.equipaje AS tren_equipaje,
+        t.sillas_reservadas AS tren_sillas_reservadas
+
       FROM cotizacion_item ci
       JOIN servicio     s  ON s.id        = ci.id_servicio
       JOIN tiposervicio ts ON ts.id       = s.id_tipo
       JOIN ciudad       c  ON c.id        = s.id_ciudad
       LEFT JOIN alojamiento a ON a.id_servicio = s.id
+      LEFT JOIN vuelo v       ON v.id_servicio = s.id
+      LEFT JOIN tren  t       ON t.id_servicio = s.id
       WHERE ci.id_item = ?
       `,
       [idItem]
     );
 
     const row = rows[0];
-    let base = row.titulo_override || row.nombre_servicio || "";
-    const tipo = row.tipo_servicio || "";
-
-    if (esTipoAlojamiento(tipo)) {
-      base = `Alojamiento: ${base}`;
-    }
-    if (row.es_opcional) {
-      base = `Opcional: ${base}`;
-    }
 
     return res.status(201).json({
       ok: true,
       item: {
         ...row,
-        servicio_texto: base
+        servicio_texto: buildServicioTexto(row)
       }
     });
 
@@ -484,66 +468,6 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
   }
 });
 
-/**
- * PUT /api/cotizaciones/:id/items/orden
- * Actualiza orden_dia de todos los items de una cotización.
- * Body:
- *   { orden: [ { id_item, orden_dia }, ... ] }
- */
-router.put("/cotizaciones/:id/items/orden", async (req, res) => {
-  try {
-    const idCotizacion = Number(req.params.id);
-    if (!idCotizacion) {
-      return res.status(400).json({ ok: false, mensaje: "ID de cotización inválido." });
-    }
-
-    const orden = Array.isArray(req.body.orden) ? req.body.orden : [];
-    if (!orden.length) {
-      return res.status(400).json({ ok: false, mensaje: "No se recibió orden para actualizar." });
-    }
-
-    const conn = await db.getConnection();
-    try {
-      await conn.beginTransaction();
-
-      for (const item of orden) {
-        const idItem = Number(item.id_item);
-        const ordenDia = Number(item.orden_dia);
-        if (!idItem || !ordenDia) continue;
-
-        await conn.execute(
-          `
-          UPDATE cotizacion_item
-          SET orden_dia = ?
-          WHERE id_item = ? AND id_cotizacion = ?
-          `,
-          [ordenDia, idItem, idCotizacion]
-        );
-      }
-
-      await conn.commit();
-    } catch (e) {
-      await conn.rollback();
-      throw e;
-    } finally {
-      conn.release();
-    }
-
-    return res.json({ ok: true, mensaje: "Orden actualizado correctamente." });
-  } catch (error) {
-    console.error("Error al actualizar orden de items:", error);
-    return res.status(500).json({
-      ok: false,
-      mensaje: "Error interno al actualizar el orden de los items.",
-      error: error.message
-    });
-  }
-});
-
-/**
- * DELETE /api/cotizaciones/items/:id_item
- * Elimina un item concreto de una cotización.
- */
 router.delete("/cotizaciones/items/:id_item", async (req, res) => {
   try {
     const idItem = Number(req.params.id_item);

@@ -97,6 +97,57 @@
         </div>
       </div>
     </section>
+    
+    <!-- Crear servicio rápido -->
+    <section class="crear-servicio-rapido">
+      <button type="button" id="btn-toggle-crear-servicio">
+        + Crear servicio rápido
+      </button>
+
+      <div id="panel-crear-servicio" style="display:none;">
+        <h3>Crear servicio</h3>
+
+        <div class="grid-2">
+          <label>Proveedor<br/>
+            <select id="nuevo-id-proveedor"></select>
+          </label>
+
+          <label>Link de reserva<br/>
+            <input type="url" id="nuevo-link-reserva" placeholder="https://..." />
+          </label>
+
+          <label>Nombre WTravel<br/>
+            <input type="text" id="nuevo-nombre-wtravel" />
+          </label>
+
+          <label>Tiempo del servicio<br/>
+            <input type="text" id="nuevo-tiempo-servicio" placeholder="Ej: 8h, 1h, 7 noches..." />
+          </label>
+
+          <label>Privado<br/>
+            <select id="nuevo-privado">
+              <option value="0">No</option>
+              <option value="1">Sí</option>
+            </select>
+          </label>
+
+          <label>Descripción<br/>
+            <input type="text" id="nuevo-descripcion" placeholder="Opcional..." />
+          </label>
+        </div>
+
+        <!-- Campos dinámicos -->
+        <div id="nuevo-campos-dinamicos"></div>
+
+        <div class="acciones">
+          <button type="button" id="btn-guardar-servicio-rapido">Guardar servicio</button>
+          <button type="button" id="btn-cancelar-servicio-rapido">Cancelar</button>
+        </div>
+
+        <p id="msg-crear-servicio" class="mensaje-error"></p>
+      </div>
+    </section>
+
 
     <!-- 2. SERVICIOS INCLUIDOS (tabla) -->
     <section>
