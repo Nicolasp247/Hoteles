@@ -276,7 +276,6 @@ router.get("/cotizaciones/:id", async (req, res) => {
         t.destino AS tren_destino,
         t.escalas AS tren_escalas,
         t.clase   AS tren_clase,
-        t.equipaje AS tren_equipaje,
         t.sillas_reservadas AS tren_sillas_reservadas
 
       FROM cotizacion_item ci

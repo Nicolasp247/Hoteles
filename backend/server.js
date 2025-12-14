@@ -74,7 +74,6 @@ app.get('/api/_meta/schema', async (_req, res) => {
   }
 });
 
-
 // --- Rutas Etapa 1 ---
 app.use('/api', require('./src/routes/etapa1/ubicaciones'));
 app.use('/api', require('./src/routes/etapa1/hoteles'));
