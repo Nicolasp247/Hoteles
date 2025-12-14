@@ -83,6 +83,8 @@ app.use('/api', require('./src/routes/etapa2/tiposervicio'));
 app.use('/api', require('./src/routes/etapa2/proveedores'));
 app.use('/api', require('./src/routes/etapa2/servicios'));
 app.use('/api', require('./src/routes/etapa2/alojamientos'));
+app.use('/api', require('./src/routes/catalogos'));
+
 
 // --- Rutas Etapa 3 (Cotizaciones) ---  👈 NUEVA LÍNEA
 app.use('/api', require('./src/routes/etapa3/cotizaciones'));
@@ -93,7 +95,8 @@ app.use('/api', (_req, res) => {
 });
 
 // Manejador de errores global
-app.use((err, _req, res, _next) => {
+app.use((err, _req, res, next) => {
+  if (res.headersSent) return next(err); 
   console.error('UNCAUGHT ERROR:', err);
   res.status(500).json({ error: String(err) });
 });

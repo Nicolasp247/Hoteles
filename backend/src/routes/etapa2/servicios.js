@@ -11,9 +11,56 @@ function toTime(s) {
   return str;
 }
 
+// Guarda un valor en el catálogo si no existe (auto-aprendizaje)
+async function upsertCatalogo(conn, grupo, valor) {
+  const v = String(valor || "").trim();
+  if (!v) return;
+  await conn.execute(
+    `INSERT IGNORE INTO catalogo_opcion (grupo, valor) VALUES (?, ?)`,
+    [grupo, v]
+  );
+}
+
+// ===== Helpers para inserts dinámicos (sin adivinar columnas) =====
+async function getTableColumns(conn, tableName) {
+  const [rows] = await conn.execute(
+    `
+    SELECT COLUMN_NAME
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = ?
+    `,
+    [tableName]
+  );
+  return rows.map(r => r.COLUMN_NAME);
+}
+
+async function insertDynamicOneToOne(conn, tableName, id_servicio, obj) {
+  // Inserta en tableName con id_servicio + SOLO columnas existentes
+  if (!obj || typeof obj !== "object") return false;
+
+  const cols = await getTableColumns(conn, tableName);
+  if (!cols.includes("id_servicio")) {
+    // Si la tabla no tiene id_servicio, no hacemos nada (evita errores)
+    return false;
+  }
+
+  const payload = { ...obj, id_servicio };
+
+  // Filtrar claves que sí existen como columnas
+  const keys = Object.keys(payload).filter(k => cols.includes(k));
+  if (keys.length === 0) return false;
+
+  const placeholders = keys.map(() => "?").join(", ");
+  const sql = `INSERT INTO ${tableName} (${keys.join(", ")}) VALUES (${placeholders})`;
+  const values = keys.map(k => payload[k]);
+
+  await conn.execute(sql, values);
+  return true;
+}
+
 /* =========================================================
    GET /api/proveedores
-   (para llenar el select del mini-form)
 ========================================================= */
 router.get("/proveedores", async (_req, res) => {
   try {
@@ -31,7 +78,7 @@ router.get("/proveedores", async (_req, res) => {
 
 /* =========================================================
    POST /api/servicios
-   Crear servicio + subtabla (alojamiento / boleto / vuelo / tren)
+   Crear servicio + subtabla (alojamiento / boleto / vuelo / tren / traslado / tour)
 ========================================================= */
 router.post("/servicios", async (req, res) => {
   let conn;
@@ -52,7 +99,9 @@ router.post("/servicios", async (req, res) => {
       alojamiento,
       boleto_entrada,
       vuelo,
-      tren
+      tren,
+      traslado,
+      tour
     } = req.body || {};
 
     if (!id_tipo || !id_proveedor || !id_ciudad || !nombre_wtravel) {
@@ -88,79 +137,166 @@ router.post("/servicios", async (req, res) => {
     const id_servicio = ins.insertId;
 
     // 2) Subtablas (1:1)
+
+    // ===== ALOJAMIENTO (Camino 2: enum + *_otro + auto-alimentación) =====
     if (alojamiento) {
+      const regimen = alojamiento.regimen ?? null;
+      const regimen_otro = String(alojamiento.regimen_otro || "").trim() || null;
+
+      const categoria_hotel = alojamiento.categoria_hotel ?? null;
+      const categoria_hotel_otro = String(alojamiento.categoria_hotel_otro || "").trim() || null;
+
+      const categoria_hab = alojamiento.categoria_hab ?? null;
+      const categoria_hab_otro = String(alojamiento.categoria_hab_otro || "").trim() || null;
+
       await conn.execute(
         `
         INSERT INTO alojamiento (
-          id_servicio, noches, habitaciones, regimen,
-          categoria_hotel, categoria_hab, proveedor_hotel
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          id_servicio,
+          noches,
+          habitaciones,
+          regimen,
+          regimen_otro,
+          categoria_hotel,
+          categoria_hotel_otro,
+          categoria_hab,
+          categoria_hab_otro,
+          proveedor_hotel
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           id_servicio,
           alojamiento.noches ?? 1,
           alojamiento.habitaciones ?? 1,
-          alojamiento.regimen ?? null,
-          alojamiento.categoria_hotel ?? null,
-          alojamiento.categoria_hab ?? null,
+          regimen,
+          (regimen === "OTRO") ? regimen_otro : null,
+          categoria_hotel,
+          (categoria_hotel === "OTRO") ? categoria_hotel_otro : null,
+          categoria_hab,
+          (categoria_hab === "OTRO") ? categoria_hab_otro : null,
           alojamiento.proveedor_hotel ?? null
         ]
       );
+
+      // Auto-alimentar catálogos
+      if (regimen === "OTRO" && regimen_otro) {
+        await upsertCatalogo(conn, "aloj_regimen_otro", regimen_otro);
+      }
+      if (categoria_hotel === "OTRO" && categoria_hotel_otro) {
+        await upsertCatalogo(conn, "aloj_categoria_hotel_otro", categoria_hotel_otro);
+      }
+      if (categoria_hab === "OTRO" && categoria_hab_otro) {
+        await upsertCatalogo(conn, "aloj_categoria_hab_otro", categoria_hab_otro);
+      }
     }
 
+    // ===== BOLETO (tipo_entrada + tipo_entrada_otro + auto-alimentación) =====
     if (boleto_entrada) {
+      const tipo_entrada = String(boleto_entrada.tipo_entrada || "").trim() || null;
+      const tipo_entrada_otro = String(boleto_entrada.tipo_entrada_otro || "").trim() || null;
+
       await conn.execute(
         `
         INSERT INTO boleto_entrada (
-          id_servicio, nombre_lugar, tipo_entrada,
-          audioguia, idioma
-        ) VALUES (?, ?, ?, ?, ?)
-        `,
-        [
           id_servicio,
-          boleto_entrada.nombre_lugar || null,
-          boleto_entrada.tipo_entrada || null,
-          boleto_entrada.audioguia ? 1 : 0,
-          boleto_entrada.idioma || null
-        ]
-      );
-    }
-
-    if (vuelo) {
-      await conn.execute(
-        `
-        INSERT INTO vuelo (
-          id_servicio, origen, destino, escalas, clase, equipaje
+          boleto_entrada,
+          tipo_entrada,
+          tipo_entrada_otro,
+          audioguia,
+          idioma
         ) VALUES (?, ?, ?, ?, ?, ?)
         `,
         [
           id_servicio,
-          vuelo.origen || "",
-          vuelo.destino || "",
-          vuelo.escalas ?? 0,
-          vuelo.clase || null,
-          vuelo.equipaje || null
+          boleto_entrada.boleto_entrada || null,
+          tipo_entrada,
+          (tipo_entrada === "OTRA") ? tipo_entrada_otro : null,
+          boleto_entrada.audioguia ? 1 : 0,
+          boleto_entrada.idioma || null
         ]
       );
+
+      if (tipo_entrada === "OTRA" && tipo_entrada_otro) {
+        await upsertCatalogo(conn, "boleto_tipo_entrada_otro", tipo_entrada_otro);
+      }
     }
 
+    // ===== VUELO (inserta solo si columnas existen) =====
+    if (vuelo) {
+      // vuelo suele existir completo, pero lo hacemos robusto igual
+      await insertDynamicOneToOne(conn, "vuelo", id_servicio, {
+        origen: vuelo.origen || "",
+        destino: vuelo.destino || "",
+        escalas: vuelo.escalas ?? 0,
+        clase: vuelo.clase || null,
+        equipaje: vuelo.equipaje || null
+      });
+    }
+
+    // ===== TREN (tu BD puede NO tener equipaje) =====
     if (tren) {
-      await conn.execute(
-        `
-        INSERT INTO tren (
-          id_servicio, origen, destino, escalas, clase, equipaje, sillas_reservadas
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        `,
-        [
-          id_servicio,
-          tren.origen || "",
-          tren.destino || "",
-          tren.escalas ?? 0,
-          tren.clase || null,
-          tren.equipaje || null,
-          tren.sillas_reservadas ? 1 : 0
-        ]
-      );
+      const trenObj = {
+        origen: tren.origen || "",
+        destino: tren.destino || "",
+        escalas: tren.escalas ?? 0,
+        clase: tren.clase || null,
+        // equipaje solo si existe en tabla (insertDynamic lo ignora si no está)
+        equipaje: tren.equipaje || null,
+        sillas_reservadas: tren.sillas_reservadas ? 1 : 0
+      };
+      await insertDynamicOneToOne(conn, "tren", id_servicio, trenObj);
+    }
+
+    // ===== TRASLADO (mini-form) =====
+    if (traslado) {
+      // Insert dinámico según columnas reales
+      await insertDynamicOneToOne(conn, "traslado", id_servicio, traslado);
+
+      // Auto-alimentación de catálogos para OTRO
+      if (traslado.tipo_traslado === "OTRO" && traslado.tipo_traslado_otro) {
+        await upsertCatalogo(conn, "traslado_tipo_otro", traslado.tipo_traslado_otro);
+      }
+      if (traslado.vehiculo === "OTRO" && traslado.vehiculo_otro) {
+        await upsertCatalogo(conn, "traslado_vehiculo_otro", traslado.vehiculo_otro);
+      }
+    }
+
+    // ===== TOUR (Excursión / Visita / Tour) =====
+    if (tour) {
+      // 1) Normalizar nombres (front → BD)
+      // La tabla exige "idioma"
+      if (!tour.idioma && tour.idioma_guia) {
+        tour.idioma = tour.idioma_guia;
+      }
+
+      if (!tour.idioma_otro && tour.idioma_guia_otro) {
+        tour.idioma_otro = tour.idioma_guia_otro;
+      }
+
+      // 2) Validación fuerte (idioma es obligatorio en BD)
+      const idioma = String(tour.idioma || "").trim();
+      if (!idioma) {
+        return res.status(400).json({
+          ok: false,
+          mensaje: "Falta el idioma del guía (campo obligatorio para Excursión / Visita)."
+        });
+      }
+
+      // 3) Insert dinámico (solo columnas reales)
+      await insertDynamicOneToOne(conn, "tour", id_servicio, {
+        lugar: tour.lugar || null,
+        punto_encuentro: tour.punto_encuentro || null,
+        duracion: tour.duracion || null,
+        idioma: idioma,
+        idioma_otro: (idioma === "OTRO") ? tour.idioma_otro : null,
+        incluye: tour.incluye || null,
+        observaciones: tour.observaciones || null
+      });
+
+      // 4) Auto-alimentar catálogo si es OTRO
+      if ((idioma === "OTRO") && tour.idioma_otro) {
+        await upsertCatalogo(conn, "tour_idioma_guia_otro", tour.idioma_otro);
+      }
     }
 
     await conn.commit();
@@ -186,7 +322,6 @@ router.post("/servicios", async (req, res) => {
 
 /* =========================================================
    POST /api/servicios/:id/horas
-   Agregar horas (bulk)
 ========================================================= */
 router.post("/servicios/:id/horas", async (req, res) => {
   try {
@@ -233,8 +368,21 @@ router.post("/servicios/:id/horas", async (req, res) => {
 ========================================================= */
 router.get("/servicios", async (_req, res) => {
   try {
-    const [rows] = await pool.execute(
+    // Detectar si tren tiene equipaje (para no petar en SELECT)
+    const [trenColsRows] = await pool.execute(
       `
+      SELECT COLUMN_NAME
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'tren'
+        AND COLUMN_NAME = 'equipaje'
+      `
+    );
+    const trenTieneEquipaje = trenColsRows.length > 0;
+
+    const trenEquipajeSelect = trenTieneEquipaje ? ", t.equipaje AS tren_equipaje" : "";
+
+    const [rows] = await pool.execute(`
       SELECT
         s.id,
         s.id_tipo,
@@ -244,32 +392,117 @@ router.get("/servicios", async (_req, res) => {
         s.privado,
         s.descripcion,
         s.link_reserva,
+
         ts.nombre AS tipo,
-        p.nombre  AS proveedor,
         c.nombre  AS ciudad,
         pa.id     AS id_pais,
-        ct.id     AS id_continente
+        ct.id     AS id_continente,
+
+        -- alojamiento
+        a.noches AS noches_alojamiento,
+
+        -- boleto
+        be.boleto_entrada     AS be_lugar,
+        be.tipo_entrada       AS be_tipo,
+        be.tipo_entrada_otro  AS be_tipo_otro,
+        be.audioguia          AS be_audioguia,
+        be.idioma             AS be_idioma,
+
+        -- vuelo
+        v.origen   AS vuelo_origen,
+        v.destino  AS vuelo_destino,
+        v.escalas  AS vuelo_escalas,
+        v.clase    AS vuelo_clase,
+        v.equipaje AS vuelo_equipaje,
+
+        -- tren
+        t.origen   AS tren_origen,
+        t.destino  AS tren_destino,
+        t.escalas  AS tren_escalas,
+        t.clase    AS tren_clase
+        ${trenEquipajeSelect},
+        t.sillas_reservadas AS tren_sillas_reservadas
+
       FROM servicio s
       JOIN tiposervicio ts ON s.id_tipo = ts.id
-      JOIN proveedor   p  ON s.id_proveedor = p.id
       JOIN ciudad      c  ON s.id_ciudad = c.id
       JOIN pais        pa ON c.id_pais = pa.id
       JOIN continente  ct ON pa.id_continente = ct.id
-      ORDER BY s.nombre_wtravel
-      `
-    );
 
-    // IMPORTANTE: tu front de cotizacion-editar.js espera un ARRAY directo
-    res.json(rows);
+      LEFT JOIN alojamiento    a  ON a.id_servicio  = s.id
+      LEFT JOIN boleto_entrada be ON be.id_servicio = s.id
+      LEFT JOIN vuelo          v  ON v.id_servicio  = s.id
+      LEFT JOIN tren           t  ON t.id_servicio  = s.id
+
+      ORDER BY s.nombre_wtravel
+    `);
+
+    function textoEscalas(escalas) {
+      const n = Number(escalas);
+      if (!Number.isFinite(n) || n <= 0) return "directo";
+      return n === 1 ? "1 escala" : `${n} escalas`;
+    }
+
+    function buildServicioTexto(s) {
+      const tipo = (s.tipo || "").toLowerCase();
+      let base = s.nombre_wtravel || `Servicio #${s.id}`;
+
+      // Vuelo
+      if (tipo.includes("vuelo") && (s.vuelo_origen || s.vuelo_destino)) {
+        base = `Vuelo ${textoEscalas(s.vuelo_escalas)} de ${s.vuelo_origen} a ${s.vuelo_destino}`;
+        if (s.vuelo_clase) base += `, clase ${s.vuelo_clase}`;
+        if (s.vuelo_equipaje) base += `, equipaje ${s.vuelo_equipaje}`;
+        return base;
+      }
+
+      // Tren
+      if (tipo.includes("tren") && (s.tren_origen || s.tren_destino)) {
+        base = `Tren ${textoEscalas(s.tren_escalas)} de ${s.tren_origen} a ${s.tren_destino}`;
+        if (s.tren_clase) base += `, clase ${s.tren_clase}`;
+        if (s.tren_equipaje) base += `, equipaje ${s.tren_equipaje}`;
+        if (s.tren_sillas_reservadas != null) {
+          base += s.tren_sillas_reservadas ? `, asientos reservados` : `, sin asientos reservados`;
+        }
+        return base;
+      }
+
+      // Boleto
+      if (tipo.includes("boleto") && (s.be_lugar || s.be_tipo)) {
+        base = `Entrada: ${s.be_lugar || "Lugar"}`;
+        if (s.be_tipo) base += `, ${s.be_tipo}`;
+        if (s.be_tipo === "OTRA" && s.be_tipo_otro) base += ` (${s.be_tipo_otro})`;
+        if (s.be_audioguia != null) base += s.be_audioguia ? `, con audioguía` : `, sin audioguía`;
+        if (s.be_idioma) base += `, idioma ${s.be_idioma}`;
+        return base;
+      }
+
+      // Alojamiento
+      if (tipo.includes("aloj") && s.noches_alojamiento) {
+        return `Alojamiento: ${base} (${s.noches_alojamiento} noche(s))`;
+      }
+
+      return base;
+    }
+
+    const rowsFinal = rows.map(r => ({
+      ...r,
+      servicio_texto: buildServicioTexto(r)
+    }));
+
+    return res.json(rowsFinal);
+
   } catch (e) {
     console.error("GET /servicios", e);
-    res.status(500).json({ ok: false, mensaje: "Error listando servicios", error: e.message });
+    return res.status(500).json({
+      ok: false,
+      mensaje: "Error listando servicios",
+      error: e.message
+    });
   }
 });
 
 /* =========================================================
    GET /api/servicios/:id
-   Detalle (base + alojamiento + horas + vuelo + tren + boleto + traslado/tour si existen)
 ========================================================= */
 router.get("/servicios/:id", async (req, res) => {
   try {
@@ -298,10 +531,19 @@ router.get("/servicios/:id", async (req, res) => {
 
     const base = rows[0];
 
-    // Alojamiento
+    // Alojamiento (incluye *_otro)
     const [alojaRows] = await pool.execute(
       `
-      SELECT noches, habitaciones, regimen, categoria_hotel, categoria_hab, proveedor_hotel
+      SELECT
+        noches,
+        habitaciones,
+        regimen,
+        regimen_otro,
+        categoria_hotel,
+        categoria_hotel_otro,
+        categoria_hab,
+        categoria_hab_otro,
+        proveedor_hotel
       FROM alojamiento
       WHERE id_servicio = ?
       `,
@@ -324,7 +566,12 @@ router.get("/servicios/:id", async (req, res) => {
     // Boleto entrada
     const [beRows] = await pool.execute(
       `
-      SELECT nombre_lugar, tipo_entrada, audioguia, idioma
+      SELECT
+        boleto_entrada,
+        tipo_entrada,
+        tipo_entrada_otro,
+        audioguia,
+        idioma
       FROM boleto_entrada
       WHERE id_servicio = ?
       `,
@@ -343,31 +590,39 @@ router.get("/servicios/:id", async (req, res) => {
     );
     const vuelo = vueloRows[0] || null;
 
-    // Tren
-    const [trenRows] = await pool.execute(
+    // Tren (equipaje puede no existir)
+    const [trenColsRows] = await pool.execute(
       `
-      SELECT origen, destino, escalas, clase, equipaje, sillas_reservadas
-      FROM tren
-      WHERE id_servicio = ?
-      `,
-      [id]
+      SELECT COLUMN_NAME
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND TABLE_NAME = 'tren'
+        AND COLUMN_NAME = 'equipaje'
+      `
     );
+    const trenTieneEquipaje = trenColsRows.length > 0;
+
+    const trenSelect = trenTieneEquipaje
+      ? `SELECT origen, destino, escalas, clase, equipaje, sillas_reservadas FROM tren WHERE id_servicio = ?`
+      : `SELECT origen, destino, escalas, clase, sillas_reservadas FROM tren WHERE id_servicio = ?`;
+
+    const [trenRows] = await pool.execute(trenSelect, [id]);
     const tren = trenRows[0] || null;
 
-    // Si existen en tu BD (si no existen, puedes borrar estos 2 bloques)
+    // Traslado / Tour (si no existen, no rompe)
     const [trasRows] = await pool.execute(
       `SELECT * FROM traslado WHERE id_servicio = ?`,
       [id]
-    ).catch(() => [ [] ]);
+    ).catch(() => [[]]);
     const traslado = trasRows[0] || null;
 
     const [tourRows] = await pool.execute(
       `SELECT * FROM tour WHERE id_servicio = ?`,
       [id]
-    ).catch(() => [ [] ]);
+    ).catch(() => [[]]);
     const tour = tourRows[0] || null;
 
-    res.json({
+    return res.json({
       ok: true,
       servicio: {
         id: base.id,
@@ -395,13 +650,12 @@ router.get("/servicios/:id", async (req, res) => {
 
   } catch (e) {
     console.error("GET /servicios/:id", e);
-    res.status(500).json({ ok: false, mensaje: "Error obteniendo servicio", error: e.message });
+    return res.status(500).json({ ok: false, mensaje: "Error obteniendo servicio", error: e.message });
   }
 });
 
 /* =========================================================
    PUT /api/servicio/:id
-   Actualizar servicio (mantengo tu ruta "singular" por compatibilidad)
 ========================================================= */
 router.put("/servicio/:id", async (req, res) => {
   try {
@@ -451,7 +705,6 @@ router.put("/servicio/:id", async (req, res) => {
 
 /* =========================================================
    PUT /api/servicios/:id/horas
-   Reemplazar horas (borra y re-inserta)
 ========================================================= */
 router.put("/servicios/:id/horas", async (req, res) => {
   let conn;

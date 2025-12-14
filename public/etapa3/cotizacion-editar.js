@@ -68,16 +68,85 @@ document.addEventListener("DOMContentLoaded", () => {
       throw new Error(`Respuesta no-JSON desde ${url}: ${text.slice(0, 180)}`);
     }
 
-    // Caso A: devuelve array directo
     if (Array.isArray(data)) return data;
 
-    // Caso B: devuelve objeto con listas dentro
     for (const k of posiblesKeys) {
       if (Array.isArray(data?.[k])) return data[k];
     }
 
-    // Caso C: objeto pero con forma rara
     throw new Error(`Formato inesperado desde ${url}`);
+  }
+
+  // ====== Catálogos "auto-alimentados" (catalogo_opcion) ======
+  const catalogCache = {}; // { grupo: [ {valor}, ... ] }
+
+  async function cargarCatalogo(grupo) {
+    if (catalogCache[grupo]) return catalogCache[grupo];
+
+    // Endpoint esperado: /api/catalogos/:grupo
+    const lista = await fetchLista(`/api/catalogos/${encodeURIComponent(grupo)}`, ["opciones", "valores", "items"]);
+    const norm = lista
+      .map(x => (typeof x === "string" ? { valor: x } : x))
+      .filter(x => x?.valor);
+
+    catalogCache[grupo] = norm;
+    return norm;
+  }
+
+  function addOptions(selectEl, opciones, { firstText = "(Seleccionar)", firstValue = "" } = {}) {
+    if (!selectEl) return;
+    selectEl.innerHTML = "";
+    selectEl.appendChild(new Option(firstText, firstValue));
+    opciones.forEach(o => {
+      selectEl.appendChild(new Option(o.text, o.value));
+    });
+  }
+
+  function show(el, visible) {
+    if (!el) return;
+    el.style.display = visible ? "" : "none";
+  }
+
+  // Crea el patrón: select catálogo + "Escribir nuevo..."
+  async function initOtroCatalogo({
+    grupoCatalogo,
+    selectCatalogoEl,
+    inputTextoEl
+  }) {
+    if (!selectCatalogoEl) return;
+
+    try {
+      const cat = await cargarCatalogo(grupoCatalogo);
+      const opts = [
+        { value: "", text: "(Elegir de catálogo)" },
+        ...cat.map(x => ({ value: x.valor, text: x.valor })),
+        { value: "__write__", text: "Escribir nuevo..." }
+      ];
+      addOptions(selectCatalogoEl, opts, { firstText: "(Elegir de catálogo)", firstValue: "" });
+    } catch {
+      addOptions(selectCatalogoEl, [
+        { value: "", text: "(Elegir de catálogo)" },
+        { value: "__write__", text: "Escribir nuevo..." }
+      ]);
+    }
+
+    function syncWrite() {
+      const wantsWrite = selectCatalogoEl.value === "__write__";
+      show(inputTextoEl, wantsWrite);
+      if (!wantsWrite && inputTextoEl) inputTextoEl.value = "";
+    }
+
+    selectCatalogoEl.addEventListener("change", syncWrite);
+    syncWrite();
+  }
+
+  function leerValorOtro({ selectCatalogoEl, inputTextoEl }) {
+    if (!selectCatalogoEl) return null;
+    const v = selectCatalogoEl.value || "";
+    if (!v) return null;
+    if (v !== "__write__") return v;
+    const txt = (inputTextoEl?.value || "").trim();
+    return txt || null;
   }
 
   function recalcularTotal() {
@@ -394,7 +463,6 @@ document.addEventListener("DOMContentLoaded", () => {
   // ==============================
   async function cargarTiposServicio() {
     try {
-      // OJO: en tus pruebas el endpoint bueno es /api/tiposervicio
       const lista = await fetchLista("/api/tiposervicio", ["tipos", "tipos_servicio", "tiposervicio"]);
       filtroTipoServicio.innerHTML = "";
       filtroTipoServicio.appendChild(new Option("(Todos los tipos)", ""));
@@ -464,7 +532,8 @@ document.addEventListener("DOMContentLoaded", () => {
     selectServicio.appendChild(new Option("(Seleccionar servicio)", ""));
 
     servicios.forEach((s) => {
-      selectServicio.appendChild(new Option(s.nombre_wtravel || `Servicio #${s.id}`, s.id));
+      const texto = s.servicio_texto || s.nombre_wtravel || `Servicio #${s.id}`;
+      selectServicio.appendChild(new Option(texto, s.id));
     });
   }
 
@@ -504,7 +573,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     contDinamico.innerHTML = "";
 
-    // Alojamiento
+    // =========================
+    // ALOJAMIENTO (Camino 2)
+    // =========================
     if (tipoTexto.includes("aloj")) {
       contDinamico.innerHTML = `
         <h4>Detalle de alojamiento</h4>
@@ -512,55 +583,117 @@ document.addEventListener("DOMContentLoaded", () => {
           <label>Noches<br/>
             <input type="number" id="aloj-noches" min="1" value="1" />
           </label>
+
           <label>Habitaciones<br/>
             <input type="number" id="aloj-habitaciones" min="1" value="1" />
           </label>
 
           <label>Régimen<br/>
-            <select id="aloj-regimen">
-              <option value="SOLO_ALOJAMIENTO">Solo alojamiento</option>
-              <option value="ALOJAMIENTO_DESAYUNO">Alojamiento y desayuno</option>
-              <option value="TODO_INCLUIDO">Todo incluido</option>
-            </select>
+            <select id="aloj-regimen"></select>
+          </label>
+
+          <label id="wrap-aloj-regimen-otro" style="display:none;">OTRO: ¿cuál?<br/>
+            <div style="display:flex; gap:8px;">
+              <select id="aloj-regimen-otro-select" style="flex:1;"></select>
+              <input type="text" id="aloj-regimen-otro-txt" placeholder="Escribir..." style="flex:1; display:none;" />
+            </div>
           </label>
 
           <label>Categoría hotel<br/>
-            <select id="aloj-categoria-hotel">
-              <option value="3E_ECONOMICO">3* Económico</option>
-              <option value="3E_SUPERIOR">3* Superior</option>
-              <option value="4E_ECONOMICO">4* Económico</option>
-              <option value="4E_SUPERIOR">4* Superior</option>
-              <option value="5E_ECONOMICO">5* Económico</option>
-              <option value="5E_SUPERIOR">5* Superior</option>
-              <option value="LUJO_ECONOMICO">Lujo Económico</option>
-              <option value="LUJO_SUPERIOR">Lujo Superior</option>
-            </select>
+            <select id="aloj-categoria-hotel"></select>
+          </label>
+
+          <label id="wrap-aloj-cat-hotel-otro" style="display:none;">OTRO: ¿cuál?<br/>
+            <div style="display:flex; gap:8px;">
+              <select id="aloj-categoria-hotel-otro-select" style="flex:1;"></select>
+              <input type="text" id="aloj-categoria-hotel-otro-txt" placeholder="Escribir..." style="flex:1; display:none;" />
+            </div>
           </label>
 
           <label>Categoría habitación<br/>
-            <select id="aloj-categoria-hab">
-              <option value="ESTANDAR">Estándar</option>
-              <option value="SUPERIOR">Superior</option>
-              <option value="SUITE">Suite</option>
-              <option value="OTRO">Otro</option>
-            </select>
+            <select id="aloj-categoria-hab"></select>
           </label>
 
-          <label id="wrap-aloj-otro" style="display:none;">¿Cuál?<br/>
-            <input type="text" id="aloj-categoria-hab-otro" />
+          <label id="wrap-aloj-cat-hab-otro" style="display:none;">OTRO: ¿cuál?<br/>
+            <div style="display:flex; gap:8px;">
+              <select id="aloj-categoria-hab-otro-select" style="flex:1;"></select>
+              <input type="text" id="aloj-categoria-hab-otro-txt" placeholder="Escribir..." style="flex:1; display:none;" />
+            </div>
           </label>
         </div>
       `;
 
-      const sel = document.getElementById("aloj-categoria-hab");
-      const wrapOtro = document.getElementById("wrap-aloj-otro");
-      sel?.addEventListener("change", () => {
-        wrapOtro.style.display = (sel.value === "OTRO") ? "" : "none";
-      });
+      // OJO: aquí debes alinear con tus ENUM reales (ejemplos)
+      const selReg = document.getElementById("aloj-regimen");
+      const selCatHotel = document.getElementById("aloj-categoria-hotel");
+      const selCatHab = document.getElementById("aloj-categoria-hab");
+
+      const wrapRegOtro = document.getElementById("wrap-aloj-regimen-otro");
+      const wrapHotelOtro = document.getElementById("wrap-aloj-cat-hotel-otro");
+      const wrapHabOtro = document.getElementById("wrap-aloj-cat-hab-otro");
+
+      // Enum de ejemplo (cámbialo a tu BD si aplica)
+      addOptions(selReg, [
+        { value: "SOLO_ALOJAMIENTO", text: "Solo alojamiento" },
+        { value: "ALOJAMIENTO_DESAYUNO", text: "Alojamiento y desayuno" },
+        { value: "MEDIA_PENSION", text: "Media pensión" },
+        { value: "PENSION_COMPLETA", text: "Pensión completa" },
+        { value: "TODO_INCLUIDO", text: "Todo incluido" },
+        { value: "OTRO", text: "OTRO (especificar)" }
+      ], { firstText: "(Seleccionar)", firstValue: "" });
+
+      addOptions(selCatHotel, [
+        { value: "H3_ECONOMICO", text: "3* Económico" },
+        { value: "H3_SUPERIOR", text: "3* Superior" },
+        { value: "H4_ECONOMICO", text: "4* Económico" },
+        { value: "H4_SUPERIOR", text: "4* Superior" },
+        { value: "H5_ECONOMICO", text: "5* Económico" },
+        { value: "H5_SUPERIOR", text: "5* Superior" },
+        { value: "LUJO_ECONOMICO", text: "Lujo Económico" },
+        { value: "LUJO_SUPERIOR", text: "Lujo Superior" },
+        { value: "OTRO", text: "OTRO (especificar)" }
+      ], { firstText: "(Seleccionar)", firstValue: "" });
+
+      addOptions(selCatHab, [
+        { value: "ESTANDAR", text: "Estándar" },
+        { value: "SUPERIOR", text: "Superior" },
+        { value: "SUITE", text: "Suite" },
+        { value: "OTRO", text: "OTRO (especificar)" }
+      ], { firstText: "(Seleccionar)", firstValue: "" });
+
+      // Inicializar catálogos de "otros"
+      const selRegOtro = document.getElementById("aloj-regimen-otro-select");
+      const txtRegOtro = document.getElementById("aloj-regimen-otro-txt");
+      const selHotelOtro = document.getElementById("aloj-categoria-hotel-otro-select");
+      const txtHotelOtro = document.getElementById("aloj-categoria-hotel-otro-txt");
+      const selHabOtro = document.getElementById("aloj-categoria-hab-otro-select");
+      const txtHabOtro = document.getElementById("aloj-categoria-hab-otro-txt");
+
+      initOtroCatalogo({ grupoCatalogo: "aloj_regimen_otro", selectCatalogoEl: selRegOtro, inputTextoEl: txtRegOtro });
+      initOtroCatalogo({ grupoCatalogo: "aloj_categoria_hotel_otro", selectCatalogoEl: selHotelOtro, inputTextoEl: txtHotelOtro });
+      initOtroCatalogo({ grupoCatalogo: "aloj_categoria_hab_otro", selectCatalogoEl: selHabOtro, inputTextoEl: txtHabOtro });
+
+      function syncAlojUI() {
+        show(wrapRegOtro, selReg?.value === "OTRO");
+        show(wrapHotelOtro, selCatHotel?.value === "OTRO");
+        show(wrapHabOtro, selCatHab?.value === "OTRO");
+
+        if (selReg?.value !== "OTRO") { if (selRegOtro) selRegOtro.value = ""; if (txtRegOtro) txtRegOtro.value = ""; show(txtRegOtro, false); }
+        if (selCatHotel?.value !== "OTRO") { if (selHotelOtro) selHotelOtro.value = ""; if (txtHotelOtro) txtHotelOtro.value = ""; show(txtHotelOtro, false); }
+        if (selCatHab?.value !== "OTRO") { if (selHabOtro) selHabOtro.value = ""; if (txtHabOtro) txtHabOtro.value = ""; show(txtHabOtro, false); }
+      }
+
+      selReg?.addEventListener("change", syncAlojUI);
+      selCatHotel?.addEventListener("change", syncAlojUI);
+      selCatHab?.addEventListener("change", syncAlojUI);
+      syncAlojUI();
+
       return;
     }
 
-    // Boleto de entrada
+    // =========================
+    // BOLETO (select inteligente + OTRA)
+    // =========================
     if (tipoTexto.includes("boleto")) {
       contDinamico.innerHTML = `
         <h4>Detalle de boleto de entrada</h4>
@@ -568,20 +701,60 @@ document.addEventListener("DOMContentLoaded", () => {
           <label>Lugar<br/>
             <input type="text" id="be-lugar" placeholder="Museo Louvre..." />
           </label>
+
           <label>Tipo de entrada<br/>
-            <input type="text" id="be-tipo" placeholder="estándar, 2da planta..." />
+            <select id="be-tipo-entrada"></select>
           </label>
+
+          <label id="wrap-be-tipo-otra" style="display:none;">OTRA: ¿cuál?<br/>
+            <div style="display:flex; gap:8px;">
+              <select id="be-tipo-otra-select" style="flex:1;"></select>
+              <input type="text" id="be-tipo-otra-txt" placeholder="Escribir..." style="flex:1; display:none;" />
+            </div>
+          </label>
+
           <label>Audio guía<br/>
             <select id="be-audioguia">
               <option value="0">No</option>
               <option value="1">Sí</option>
             </select>
           </label>
+
           <label>Idioma<br/>
             <input type="text" id="be-idioma" placeholder="español" />
           </label>
         </div>
       `;
+
+      const selTipo = document.getElementById("be-tipo-entrada");
+      const wrapOtra = document.getElementById("wrap-be-tipo-otra");
+      const selOtra = document.getElementById("be-tipo-otra-select");
+      const txtOtra = document.getElementById("be-tipo-otra-txt");
+
+      // OJO: ajusta estos valores a tu ENUM real (ejemplo)
+      addOptions(selTipo, [
+        { value: "ESTANDAR", text: "Estándar" },
+        { value: "VIP", text: "VIP" },
+        { value: "FAST_TRACK", text: "Fast track" },
+        { value: "OTRA", text: "OTRA (especificar)" }
+      ], { firstText: "(Seleccionar tipo)", firstValue: "" });
+
+      initOtroCatalogo({ grupoCatalogo: "boleto_tipo_entrada_otro", selectCatalogoEl: selOtra, inputTextoEl: txtOtra });
+
+      function syncOtraUI() {
+        const isOtra = selTipo?.value === "OTRA";
+        show(wrapOtra, isOtra);
+
+        if (!isOtra) {
+          if (selOtra) selOtra.value = "";
+          if (txtOtra) txtOtra.value = "";
+          show(txtOtra, false);
+        }
+      }
+
+      selTipo?.addEventListener("change", syncOtraUI);
+      syncOtraUI();
+
       return;
     }
 
@@ -639,8 +812,159 @@ document.addEventListener("DOMContentLoaded", () => {
         </div>
       `;
     }
+    // Traslado
+    if (tipoTexto.includes("trasl")) {
+      contDinamico.innerHTML = `
+        <h4>Detalle de traslado</h4>
+        <div class="grid-2">
+          <label>Origen<br/>
+            <input type="text" id="tr-origen-tx" placeholder="Aeropuerto, estación, hotel..." />
+          </label>
+
+          <label>Destino<br/>
+            <input type="text" id="tr-destino-tx" placeholder="Hotel, aeropuerto..." />
+          </label>
+
+          <label>Tipo de traslado<br/>
+            <select id="tr-tipo"></select>
+          </label>
+
+          <label id="wrap-tr-tipo-otro" style="display:none;">OTRO: ¿cuál?<br/>
+            <input type="text" id="tr-tipo-otro" placeholder="Ej: Aeropuerto - Puerto" />
+          </label>
+
+          <label>Vehículo<br/>
+            <select id="tr-vehiculo"></select>
+          </label>
+
+          <label id="wrap-tr-veh-otro" style="display:none;">OTRO: ¿cuál?<br/>
+            <input type="text" id="tr-vehiculo-otro" placeholder="Ej: SUV, Tuk-tuk..." />
+          </label>
+
+          <label>Duración aprox<br/>
+            <input type="text" id="tr-duracion" placeholder="Ej: 45 min, 1h..." />
+          </label>
+
+          <label>Equipaje<br/>
+            <input type="text" id="tr-equipaje" placeholder="Ej: 1 maleta grande + 1 carry-on" />
+          </label>
+
+          <label style="grid-column: 1 / -1;">Nota<br/>
+            <input type="text" id="tr-nota" placeholder="Opcional..." />
+          </label>
+        </div>
+      `;
+
+      const selTipo = document.getElementById("tr-tipo");
+      const wrapTipoOtro = document.getElementById("wrap-tr-tipo-otro");
+      const inpTipoOtro = document.getElementById("tr-tipo-otro");
+
+      const selVeh = document.getElementById("tr-vehiculo");
+      const wrapVehOtro = document.getElementById("wrap-tr-veh-otro");
+      const inpVehOtro = document.getElementById("tr-vehiculo-otro");
+
+      // Aquí pon los valores “seguros”. Si luego quieres “auto-alimentado”, estos OTRO alimentan catálogo.
+      addOptions(selTipo, [
+        { value: "", text: "(Seleccionar)" },
+        { value: "AEROPUERTO_HOTEL", text: "Aeropuerto → Hotel" },
+        { value: "HOTEL_AEROPUERTO", text: "Hotel → Aeropuerto" },
+        { value: "ESTACION_HOTEL", text: "Estación → Hotel" },
+        { value: "HOTEL_ESTACION", text: "Hotel → Estación" },
+        { value: "PUERTO_HOTEL", text: "Puerto → Hotel" },
+        { value: "HOTEL_PUERTO", text: "Hotel → Puerto" },
+        { value: "HOTEL_HOTEL", text: "Hotel → Hotel" },
+        { value: "OTRO", text: "OTRO (especificar)" }
+      ], { firstText: "(Seleccionar)", firstValue: "" });
+
+      addOptions(selVeh, [
+        { value: "", text: "(Seleccionar)" },
+        { value: "SEDAN", text: "Sedán" },
+        { value: "VAN", text: "Van" },
+        { value: "MINIBUS", text: "Minibús" },
+        { value: "BUS", text: "Bus" },
+        { value: "OTRO", text: "OTRO (especificar)" }
+      ], { firstText: "(Seleccionar)", firstValue: "" });
+
+      function syncTrasladoUI() {
+        const isTipoOtro = (selTipo?.value === "OTRO");
+        show(wrapTipoOtro, isTipoOtro);
+        if (!isTipoOtro && inpTipoOtro) inpTipoOtro.value = "";
+
+        const isVehOtro = (selVeh?.value === "OTRO");
+        show(wrapVehOtro, isVehOtro);
+        if (!isVehOtro && inpVehOtro) inpVehOtro.value = "";
+      }
+
+      selTipo?.addEventListener("change", syncTrasladoUI);
+      selVeh?.addEventListener("change", syncTrasladoUI);
+      syncTrasladoUI();
+      return;
+    }
+
+    // Excursión / Visita / Tour
+    if (tipoTexto.includes("excurs") || tipoTexto.includes("visita") || tipoTexto.includes("tour")) {
+      contDinamico.innerHTML = `
+        <h4>Detalle de excursión / visita</h4>
+        <div class="grid-2">
+          <label>Lugar / Atracción<br/>
+            <input type="text" id="tu-lugar" placeholder="Ej: City tour, Sagrada Familia..." />
+          </label>
+
+          <label>Punto de encuentro<br/>
+            <input type="text" id="tu-encuentro" placeholder="Ej: Lobby hotel, puerta principal..." />
+          </label>
+
+          <label>Duración<br/>
+            <input type="text" id="tu-duracion" placeholder="Ej: 3h, día completo..." />
+          </label>
+
+          <label>Idioma del guía<br/>
+            <select id="tu-idioma"></select>
+          </label>
+
+          <label id="wrap-tu-idioma-otro" style="display:none;">OTRO: ¿cuál?<br/>
+            <input type="text" id="tu-idioma-otro" placeholder="Ej: francés, italiano..." />
+          </label>
+
+          <label style="grid-column: 1 / -1;">Incluye<br/>
+            <input type="text" id="tu-incluye" placeholder="Opcional... (entradas, transporte, comida...)" />
+          </label>
+
+          <label style="grid-column: 1 / -1;">Observaciones<br/>
+            <input type="text" id="tu-obs" placeholder="Opcional..." />
+          </label>
+        </div>
+      `;
+
+      const selIdioma = document.getElementById("tu-idioma");
+      const wrapIdiomaOtro = document.getElementById("wrap-tu-idioma-otro");
+      const inpIdiomaOtro = document.getElementById("tu-idioma-otro");
+
+      addOptions(selIdioma, [
+        { value: "", text: "(Seleccionar)" },
+        { value: "ESPANOL", text: "Español" },
+        { value: "INGLES", text: "Inglés" },
+        { value: "PORTUGUES", text: "Portugués" },
+        { value: "OTRO", text: "OTRO (especificar)" }
+      ], { firstText: null })
+
+      function syncTourUI() {
+        const isOtro = (selIdioma?.value === "OTRO");
+        show(wrapIdiomaOtro, isOtro);
+        if (!isOtro && inpIdiomaOtro) inpIdiomaOtro.value = "";
+      }
+
+      selIdioma?.addEventListener("change", syncTourUI);
+      syncTourUI();
+      return;
+    }
+
+
   }
 
+  // ==============================
+  //   CLICK Guardar servicio rápido
+  // ==============================
   btnGuardarSrv?.addEventListener("click", async () => {
     msgCrear("");
 
@@ -667,27 +991,107 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const tipoTexto = (filtroTipoServicio?.options?.[filtroTipoServicio.selectedIndex]?.textContent || "").toLowerCase();
 
+    // Alojamiento (Camino 2: manda *_otro)
     if (tipoTexto.includes("aloj")) {
-      const catHab = document.getElementById("aloj-categoria-hab")?.value;
-      const otro = document.getElementById("aloj-categoria-hab-otro")?.value?.trim();
+      const regimen = document.getElementById("aloj-regimen")?.value || null;
+      const catHotel = document.getElementById("aloj-categoria-hotel")?.value || null;
+      const catHab = document.getElementById("aloj-categoria-hab")?.value || null;
+
+      const regimenOtro = (regimen === "OTRO")
+        ? leerValorOtro({
+            selectCatalogoEl: document.getElementById("aloj-regimen-otro-select"),
+            inputTextoEl: document.getElementById("aloj-regimen-otro-txt")
+          })
+        : null;
+
+      const catHotelOtro = (catHotel === "OTRO")
+        ? leerValorOtro({
+            selectCatalogoEl: document.getElementById("aloj-categoria-hotel-otro-select"),
+            inputTextoEl: document.getElementById("aloj-categoria-hotel-otro-txt")
+          })
+        : null;
+
+      const catHabOtro = (catHab === "OTRO")
+        ? leerValorOtro({
+            selectCatalogoEl: document.getElementById("aloj-categoria-hab-otro-select"),
+            inputTextoEl: document.getElementById("aloj-categoria-hab-otro-txt")
+          })
+        : null;
+
       payload.alojamiento = {
         noches: Number(document.getElementById("aloj-noches")?.value || 1),
         habitaciones: Number(document.getElementById("aloj-habitaciones")?.value || 1),
-        regimen: document.getElementById("aloj-regimen")?.value || null,
-        categoria_hotel: document.getElementById("aloj-categoria-hotel")?.value || null,
-        categoria_hab: (catHab === "OTRO") ? (otro || "OTRO") : catHab
+        regimen,
+        regimen_otro: regimenOtro,
+        categoria_hotel: catHotel,
+        categoria_hotel_otro: catHotelOtro,
+        categoria_hab: catHab,
+        categoria_hab_otro: catHabOtro
       };
     }
 
+    // Boleto
     if (tipoTexto.includes("boleto")) {
+      const tipoEntrada = document.getElementById("be-tipo-entrada")?.value || null;
+
+      let tipoEntradaOtro = null;
+      if (tipoEntrada === "OTRA") {
+        tipoEntradaOtro = leerValorOtro({
+          selectCatalogoEl: document.getElementById("be-tipo-otra-select"),
+          inputTextoEl: document.getElementById("be-tipo-otra-txt")
+        });
+      }
+
       payload.boleto_entrada = {
-        nombre_lugar: document.getElementById("be-lugar")?.value?.trim() || null,
-        tipo_entrada: document.getElementById("be-tipo")?.value?.trim() || null,
+        boleto_entrada: document.getElementById("be-lugar")?.value?.trim() || null,
+        tipo_entrada: tipoEntrada,
+        tipo_entrada_otro: tipoEntradaOtro,
         audioguia: document.getElementById("be-audioguia")?.value === "1",
         idioma: document.getElementById("be-idioma")?.value?.trim() || null
       };
     }
 
+    if (tipoTexto.includes("trasl")) {
+      const tipo = document.getElementById("tr-tipo")?.value || null;
+      const tipoOtro = document.getElementById("tr-tipo-otro")?.value?.trim() || null;
+
+      const veh = document.getElementById("tr-vehiculo")?.value || null;
+      const vehOtro = document.getElementById("tr-vehiculo-otro")?.value?.trim() || null;
+
+      payload.traslado = {
+        origen: document.getElementById("tr-origen-tx")?.value?.trim() || null,
+        destino: document.getElementById("tr-destino-tx")?.value?.trim() || null,
+
+        tipo_traslado: tipo,
+        tipo_traslado_otro: (tipo === "OTRO") ? tipoOtro : null,
+
+        vehiculo: veh,
+        vehiculo_otro: (veh === "OTRO") ? vehOtro : null,
+
+        duracion_aprox: document.getElementById("tr-duracion")?.value?.trim() || null,
+        equipaje: document.getElementById("tr-equipaje")?.value?.trim() || null,
+        nota: document.getElementById("tr-nota")?.value?.trim() || null
+      };
+    }
+
+    if (tipoTexto.includes("excurs") || tipoTexto.includes("visita") || tipoTexto.includes("tour")) {
+      const idioma = document.getElementById("tu-idioma")?.value || null;
+      const idiomaOtro = document.getElementById("tu-idioma-otro")?.value?.trim() || null;
+
+      payload.tour = {
+        lugar: document.getElementById("tu-lugar")?.value?.trim() || null,
+        punto_encuentro: document.getElementById("tu-encuentro")?.value?.trim() || null,
+        duracion: document.getElementById("tu-duracion")?.value?.trim() || null,
+
+        idioma_guia: idioma,
+        idioma_guia_otro: (idioma === "OTRO") ? idiomaOtro : null,
+
+        incluye: document.getElementById("tu-incluye")?.value?.trim() || null,
+        observaciones: document.getElementById("tu-obs")?.value?.trim() || null
+      };
+    }
+
+    // Vuelo
     if (tipoTexto.includes("vuelo")) {
       payload.vuelo = {
         origen: document.getElementById("vu-origen")?.value?.trim() || "",
@@ -698,6 +1102,7 @@ document.addEventListener("DOMContentLoaded", () => {
       };
     }
 
+    // Tren
     if (tipoTexto.includes("tren")) {
       payload.tren = {
         origen: document.getElementById("tr-origen")?.value?.trim() || "",
