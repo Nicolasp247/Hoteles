@@ -50,12 +50,15 @@ function buildTextoTren(row) {
 
   const base = `Tren ${textoEscalas(row.tren_escalas)} de ${row.tren_origen} a ${row.tren_destino}`;
   const clase = row.tren_clase ? `, clase ${row.tren_clase}` : "";
-  const equipaje = row.tren_equipaje ? `, equipaje ${row.tren_equipaje}` : "";
+
+  // IMPORTANTE: tu tabla tren NO tiene equipaje (y tu formato final no lo usa).
+  // Así evitamos el error y alineamos con el formato.
   let sillas = "";
   if (row.tren_sillas_reservadas != null) {
     sillas = row.tren_sillas_reservadas ? `, asientos reservados` : `, sin asientos reservados`;
   }
-  return `${base}${clase}${equipaje}${sillas}`;
+
+  return `${base}${clase}${sillas}`;
 }
 
 // Construye servicio_texto final (con prefijos + subtipos)
@@ -394,6 +397,7 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
 
     const idItem = result.insertId;
 
+    // IMPORTANTÍSIMO: aquí estaba el error por t.equipaje (NO existe en tu tabla tren)
     const [rows] = await db.execute(
       `
       SELECT
@@ -432,7 +436,6 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
         t.destino AS tren_destino,
         t.escalas AS tren_escalas,
         t.clase   AS tren_clase,
-        t.equipaje AS tren_equipaje,
         t.sillas_reservadas AS tren_sillas_reservadas
 
       FROM cotizacion_item ci

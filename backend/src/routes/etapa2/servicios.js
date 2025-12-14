@@ -22,7 +22,11 @@ async function upsertCatalogo(conn, grupo, valor) {
 }
 
 // ===== Helpers para inserts dinámicos (sin adivinar columnas) =====
+const _colsCache = new Map(); // key: tableName -> [cols...]
+
 async function getTableColumns(conn, tableName) {
+  if (_colsCache.has(tableName)) return _colsCache.get(tableName);
+
   const [rows] = await conn.execute(
     `
     SELECT COLUMN_NAME
@@ -32,7 +36,10 @@ async function getTableColumns(conn, tableName) {
     `,
     [tableName]
   );
-  return rows.map(r => r.COLUMN_NAME);
+
+  const cols = rows.map(r => r.COLUMN_NAME);
+  _colsCache.set(tableName, cols);
+  return cols;
 }
 
 async function insertDynamicOneToOne(conn, tableName, id_servicio, obj) {
@@ -40,10 +47,7 @@ async function insertDynamicOneToOne(conn, tableName, id_servicio, obj) {
   if (!obj || typeof obj !== "object") return false;
 
   const cols = await getTableColumns(conn, tableName);
-  if (!cols.includes("id_servicio")) {
-    // Si la tabla no tiene id_servicio, no hacemos nada (evita errores)
-    return false;
-  }
+  if (!cols.includes("id_servicio")) return false;
 
   const payload = { ...obj, id_servicio };
 
@@ -57,6 +61,34 @@ async function insertDynamicOneToOne(conn, tableName, id_servicio, obj) {
 
   await conn.execute(sql, values);
   return true;
+}
+
+async function tableHasColumn(conn, tableName, column) {
+  const cols = await getTableColumns(conn, tableName);
+  return cols.includes(column);
+}
+
+// =======================
+// Helpers de formato (servicio_texto)
+// =======================
+function textoEscalas(escalas) {
+  const n = Number(escalas);
+  if (!Number.isFinite(n) || n <= 0) return "directo";
+  return n === 1 ? "1 escala" : `${n} escalas`;
+}
+
+function pickOtro(enumVal, otroVal) {
+  if (!enumVal) return null;
+  if (String(enumVal).toUpperCase() === "OTRO") return (otroVal || null);
+  return enumVal;
+}
+
+function toPrivadoTexto(privado) {
+  return privado ? "privado" : "compartido";
+}
+
+function toGrupoTexto(privado) {
+  return privado ? "privado" : "en grupo";
 }
 
 /* =========================================================
@@ -111,6 +143,149 @@ router.post("/servicios", async (req, res) => {
       });
     }
 
+    // Detectar nombre del tipo para validar mínimos según formato
+    const [[tipoRow]] = await conn.execute(
+      `SELECT nombre FROM tiposervicio WHERE id = ?`,
+      [Number(id_tipo)]
+    );
+    const tipoNombre = (tipoRow?.nombre || "").toLowerCase();
+    const descTrim = String(descripcion || "").trim();
+
+    // =========================
+    // Validaciones por tipo (mínimos obligatorios)
+    // =========================
+
+    // VUELO: escalas, origen, destino, clase, equipaje
+    if (tipoNombre.includes("vuelo")) {
+      const v = vuelo || {};
+      const origen = String(v.origen || "").trim();
+      const destino = String(v.destino || "").trim();
+      const clase = String(v.clase || "").trim();
+      const equipaje = String(v.equipaje || "").trim();
+      const escalas = v.escalas;
+
+      if (!origen || !destino || !clase || !equipaje || escalas === undefined || escalas === null || escalas === "") {
+        return res.status(400).json({
+          ok: false,
+          mensaje: "Para VUELO son obligatorios: escalas, origen, destino, clase y equipaje."
+        });
+      }
+    }
+
+    // TREN: escalas, origen, destino, clase, sillas_reservadas
+    if (tipoNombre.includes("tren")) {
+      const t = tren || {};
+      const origen = String(t.origen || "").trim();
+      const destino = String(t.destino || "").trim();
+      const clase = String(t.clase || "").trim();
+      const escalas = t.escalas;
+      const hasSillas = (t.sillas_reservadas !== undefined && t.sillas_reservadas !== null && t.sillas_reservadas !== "");
+
+      if (!origen || !destino || !clase || escalas === undefined || escalas === null || escalas === "" || !hasSillas) {
+        return res.status(400).json({
+          ok: false,
+          mensaje: "Para TREN son obligatorios: escalas, origen, destino, clase y sillas_reservadas."
+        });
+      }
+    }
+
+    // ALOJAMIENTO: noches, categoria_hab, regimen
+    if (tipoNombre.includes("aloj")) {
+      const a = alojamiento || {};
+      const noches = Number(a.noches);
+      const regimen = String(a.regimen || "").trim();
+      const catHab = String(a.categoria_hab || "").trim();
+
+      if (!Number.isFinite(noches) || noches <= 0 || !regimen || !catHab) {
+        return res.status(400).json({
+          ok: false,
+          mensaje: "Para ALOJAMIENTO son obligatorios: noches, categoría de habitación y régimen."
+        });
+      }
+
+      if (regimen === "OTRO" && !String(a.regimen_otro || "").trim()) {
+        return res.status(400).json({ ok: false, mensaje: "Régimen OTRO requiere especificar regimen_otro." });
+      }
+      if (catHab === "OTRO" && !String(a.categoria_hab_otro || "").trim()) {
+        return res.status(400).json({ ok: false, mensaje: "Categoría habitación OTRO requiere categoria_hab_otro." });
+      }
+    }
+
+    // TRASLADO: origen, destino (y usa servicio.privado)
+    if (tipoNombre.includes("trasl")) {
+      const tr = traslado || {};
+      const origen = String(tr.origen || "").trim();
+      const destino = String(tr.destino || "").trim();
+      if (!origen || !destino) {
+        return res.status(400).json({
+          ok: false,
+          mensaje: "Para TRASLADO son obligatorios: origen y destino."
+        });
+      }
+    }
+
+    // TOUR / VISITA / EXCURSIÓN: descripcion + tipo_guia + idioma
+    if (tipoNombre.includes("excurs") || tipoNombre.includes("visita") || tipoNombre.includes("tour")) {
+      const tu = tour || {};
+
+      if (!descTrim) {
+        return res.status(400).json({
+          ok: false,
+          mensaje: "Para VISITA/EXCURSIÓN es obligatoria la descripción del servicio."
+        });
+      }
+
+      // tipo_guia selectable (viene como tu.tipo_guia)
+      const tipoGuia = String(tu.tipo_guia || "").trim();
+      const tipoGuiaOtro = String(tu.tipo_guia_otro || "").trim();
+
+      // idioma selectable (viene como tu.idioma)
+      const idioma = String(tu.idioma || "").trim();
+      const idiomaOtro = String(tu.idioma_otro || "").trim();
+
+      if (!tipoGuia) {
+        return res.status(400).json({ ok: false, mensaje: "Para VISITA/EXCURSIÓN falta tipo_guia." });
+      }
+      if (!idioma) {
+        return res.status(400).json({ ok: false, mensaje: "Para VISITA/EXCURSIÓN falta idioma." });
+      }
+      if (tipoGuia === "OTRO" && !tipoGuiaOtro) {
+        return res.status(400).json({ ok: false, mensaje: "tipo_guia OTRO requiere especificar tipo_guia_otro." });
+      }
+      if (idioma === "OTRO" && !idiomaOtro) {
+        return res.status(400).json({ ok: false, mensaje: "idioma OTRO requiere especificar idioma_otro." });
+      }
+    }
+
+    // BOLETO: descripcion + lugar + tipo_entrada + idioma
+    if (tipoNombre.includes("boleto")) {
+      const be = boleto_entrada || {};
+      if (!descTrim) {
+        return res.status(400).json({
+          ok: false,
+          mensaje: "Para BOLETO es obligatoria la descripción del servicio."
+        });
+      }
+
+      const lugar = String(be.boleto_entrada || "").trim();
+      const tipoEntrada = String(be.tipo_entrada || "").trim();
+      const idioma = String(be.idioma || "").trim();
+
+      if (!lugar || !tipoEntrada || !idioma) {
+        return res.status(400).json({
+          ok: false,
+          mensaje: "Para BOLETO son obligatorios: lugar, tipo_entrada e idioma."
+        });
+      }
+
+      if (tipoEntrada === "OTRA" && !String(be.tipo_entrada_otro || "").trim()) {
+        return res.status(400).json({
+          ok: false,
+          mensaje: "Tipo de entrada OTRA requiere especificar tipo_entrada_otro."
+        });
+      }
+    }
+
     await conn.beginTransaction();
 
     // 1) Insert servicio
@@ -129,7 +304,7 @@ router.post("/servicios", async (req, res) => {
         String(nombre_wtravel).trim(),
         tiempo_servicio ? String(tiempo_servicio).trim() : null,
         privado ? 1 : 0,
-        descripcion ? String(descripcion).trim() : null,
+        descTrim || null,
         link_reserva ? String(link_reserva).trim() : null
       ]
     );
@@ -138,7 +313,7 @@ router.post("/servicios", async (req, res) => {
 
     // 2) Subtablas (1:1)
 
-    // ===== ALOJAMIENTO (Camino 2: enum + *_otro + auto-alimentación) =====
+    // ===== ALOJAMIENTO =====
     if (alojamiento) {
       const regimen = alojamiento.regimen ?? null;
       const regimen_otro = String(alojamiento.regimen_otro || "").trim() || null;
@@ -178,7 +353,6 @@ router.post("/servicios", async (req, res) => {
         ]
       );
 
-      // Auto-alimentar catálogos
       if (regimen === "OTRO" && regimen_otro) {
         await upsertCatalogo(conn, "aloj_regimen_otro", regimen_otro);
       }
@@ -190,7 +364,7 @@ router.post("/servicios", async (req, res) => {
       }
     }
 
-    // ===== BOLETO (tipo_entrada + tipo_entrada_otro + auto-alimentación) =====
+    // ===== BOLETO =====
     if (boleto_entrada) {
       const tipo_entrada = String(boleto_entrada.tipo_entrada || "").trim() || null;
       const tipo_entrada_otro = String(boleto_entrada.tipo_entrada_otro || "").trim() || null;
@@ -221,38 +395,34 @@ router.post("/servicios", async (req, res) => {
       }
     }
 
-    // ===== VUELO (inserta solo si columnas existen) =====
+    // ===== VUELO =====
     if (vuelo) {
-      // vuelo suele existir completo, pero lo hacemos robusto igual
       await insertDynamicOneToOne(conn, "vuelo", id_servicio, {
-        origen: vuelo.origen || "",
-        destino: vuelo.destino || "",
+        origen: String(vuelo.origen || "").trim(),
+        destino: String(vuelo.destino || "").trim(),
         escalas: vuelo.escalas ?? 0,
-        clase: vuelo.clase || null,
-        equipaje: vuelo.equipaje || null
+        clase: String(vuelo.clase || "").trim(),
+        equipaje: String(vuelo.equipaje || "").trim()
       });
     }
 
-    // ===== TREN (tu BD puede NO tener equipaje) =====
+    // ===== TREN =====
     if (tren) {
-      const trenObj = {
-        origen: tren.origen || "",
-        destino: tren.destino || "",
+      await insertDynamicOneToOne(conn, "tren", id_servicio, {
+        origen: String(tren.origen || "").trim(),
+        destino: String(tren.destino || "").trim(),
         escalas: tren.escalas ?? 0,
-        clase: tren.clase || null,
-        // equipaje solo si existe en tabla (insertDynamic lo ignora si no está)
-        equipaje: tren.equipaje || null,
+        clase: String(tren.clase || "").trim(),
+        // si existe en tu tabla lo guarda, si no, lo ignora
+        equipaje: tren.equipaje ? String(tren.equipaje).trim() : null,
         sillas_reservadas: tren.sillas_reservadas ? 1 : 0
-      };
-      await insertDynamicOneToOne(conn, "tren", id_servicio, trenObj);
+      });
     }
 
-    // ===== TRASLADO (mini-form) =====
+    // ===== TRASLADO =====
     if (traslado) {
-      // Insert dinámico según columnas reales
       await insertDynamicOneToOne(conn, "traslado", id_servicio, traslado);
 
-      // Auto-alimentación de catálogos para OTRO
       if (traslado.tipo_traslado === "OTRO" && traslado.tipo_traslado_otro) {
         await upsertCatalogo(conn, "traslado_tipo_otro", traslado.tipo_traslado_otro);
       }
@@ -261,41 +431,28 @@ router.post("/servicios", async (req, res) => {
       }
     }
 
-    // ===== TOUR (Excursión / Visita / Tour) =====
+    // ===== TOUR (ajustado EXACTO a tu tabla: tipo_guia, idioma) =====
     if (tour) {
-      // 1) Normalizar nombres (front → BD)
-      // La tabla exige "idioma"
-      if (!tour.idioma && tour.idioma_guia) {
-        tour.idioma = tour.idioma_guia;
-      }
+      const tipoGuiaRaw = String(tour.tipo_guia || "").trim();
+      const tipoGuiaOtro = String(tour.tipo_guia_otro || "").trim();
+      const idiomaRaw = String(tour.idioma || "").trim();
+      const idiomaOtro = String(tour.idioma_otro || "").trim();
 
-      if (!tour.idioma_otro && tour.idioma_guia_otro) {
-        tour.idioma_otro = tour.idioma_guia_otro;
-      }
+      // Normalizar OTRO -> texto final guardable en la misma columna
+      const tipo_guia = (tipoGuiaRaw === "OTRO") ? tipoGuiaOtro : tipoGuiaRaw;
+      const idioma = (idiomaRaw === "OTRO") ? idiomaOtro : idiomaRaw;
 
-      // 2) Validación fuerte (idioma es obligatorio en BD)
-      const idioma = String(tour.idioma || "").trim();
-      if (!idioma) {
-        return res.status(400).json({
-          ok: false,
-          mensaje: "Falta el idioma del guía (campo obligatorio para Excursión / Visita)."
-        });
-      }
-
-      // 3) Insert dinámico (solo columnas reales)
       await insertDynamicOneToOne(conn, "tour", id_servicio, {
-        lugar: tour.lugar || null,
-        punto_encuentro: tour.punto_encuentro || null,
-        duracion: tour.duracion || null,
-        idioma: idioma,
-        idioma_otro: (idioma === "OTRO") ? tour.idioma_otro : null,
-        incluye: tour.incluye || null,
-        observaciones: tour.observaciones || null
+        tipo_guia,
+        idioma,
       });
 
-      // 4) Auto-alimentar catálogo si es OTRO
-      if ((idioma === "OTRO") && tour.idioma_otro) {
-        await upsertCatalogo(conn, "tour_idioma_guia_otro", tour.idioma_otro);
+      // (Opcional) Guardar "otros" en catálogo para que el select aprenda
+      if (tipoGuiaRaw === "OTRO" && tipoGuiaOtro) {
+        await upsertCatalogo(conn, "tour_tipo_guia_otro", tipoGuiaOtro);
+      }
+      if (idiomaRaw === "OTRO" && idiomaOtro) {
+        await upsertCatalogo(conn, "tour_idioma_otro", idiomaOtro);
       }
     }
 
@@ -364,25 +521,13 @@ router.post("/servicios/:id/horas", async (req, res) => {
 
 /* =========================================================
    GET /api/servicios
-   Listado para el selector (front de etapa 3 espera un ARRAY)
 ========================================================= */
 router.get("/servicios", async (_req, res) => {
+  let conn;
   try {
-    // Detectar si tren tiene equipaje (para no petar en SELECT)
-    const [trenColsRows] = await pool.execute(
-      `
-      SELECT COLUMN_NAME
-      FROM INFORMATION_SCHEMA.COLUMNS
-      WHERE TABLE_SCHEMA = DATABASE()
-        AND TABLE_NAME = 'tren'
-        AND COLUMN_NAME = 'equipaje'
-      `
-    );
-    const trenTieneEquipaje = trenColsRows.length > 0;
+    conn = await pool.getConnection();
 
-    const trenEquipajeSelect = trenTieneEquipaje ? ", t.equipaje AS tren_equipaje" : "";
-
-    const [rows] = await pool.execute(`
+    const [rows] = await conn.execute(`
       SELECT
         s.id,
         s.id_tipo,
@@ -398,15 +543,19 @@ router.get("/servicios", async (_req, res) => {
         pa.id     AS id_pais,
         ct.id     AS id_continente,
 
-        -- alojamiento
-        a.noches AS noches_alojamiento,
+        -- alojamiento (formato nuevo)
+        a.noches             AS aloj_noches,
+        a.regimen            AS aloj_regimen,
+        a.regimen_otro       AS aloj_regimen_otro,
+        a.categoria_hab      AS aloj_categoria_hab,
+        a.categoria_hab_otro AS aloj_categoria_hab_otro,
 
         -- boleto
-        be.boleto_entrada     AS be_lugar,
-        be.tipo_entrada       AS be_tipo,
-        be.tipo_entrada_otro  AS be_tipo_otro,
-        be.audioguia          AS be_audioguia,
-        be.idioma             AS be_idioma,
+        be.boleto_entrada    AS be_lugar,
+        be.tipo_entrada      AS be_tipo,
+        be.tipo_entrada_otro AS be_tipo_otro,
+        be.audioguia         AS be_audioguia,
+        be.idioma            AS be_idioma,
 
         -- vuelo
         v.origen   AS vuelo_origen,
@@ -416,12 +565,19 @@ router.get("/servicios", async (_req, res) => {
         v.equipaje AS vuelo_equipaje,
 
         -- tren
-        t.origen   AS tren_origen,
-        t.destino  AS tren_destino,
-        t.escalas  AS tren_escalas,
-        t.clase    AS tren_clase
-        ${trenEquipajeSelect},
-        t.sillas_reservadas AS tren_sillas_reservadas
+        t.origen            AS tren_origen,
+        t.destino           AS tren_destino,
+        t.escalas           AS tren_escalas,
+        t.clase             AS tren_clase,
+        t.sillas_reservadas AS tren_sillas_reservadas,
+
+        -- traslado
+        tr.origen  AS traslado_origen,
+        tr.destino AS traslado_destino,
+
+        -- tour
+        tu.tipo_guia AS tour_tipo_guia,
+        tu.idioma    AS tour_idioma
 
       FROM servicio s
       JOIN tiposervicio ts ON s.id_tipo = ts.id
@@ -433,55 +589,86 @@ router.get("/servicios", async (_req, res) => {
       LEFT JOIN boleto_entrada be ON be.id_servicio = s.id
       LEFT JOIN vuelo          v  ON v.id_servicio  = s.id
       LEFT JOIN tren           t  ON t.id_servicio  = s.id
+      LEFT JOIN traslado       tr ON tr.id_servicio = s.id
+      LEFT JOIN tour           tu ON tu.id_servicio = s.id
 
       ORDER BY s.nombre_wtravel
     `);
 
-    function textoEscalas(escalas) {
-      const n = Number(escalas);
-      if (!Number.isFinite(n) || n <= 0) return "directo";
-      return n === 1 ? "1 escala" : `${n} escalas`;
-    }
-
     function buildServicioTexto(s) {
       const tipo = (s.tipo || "").toLowerCase();
-      let base = s.nombre_wtravel || `Servicio #${s.id}`;
 
-      // Vuelo
-      if (tipo.includes("vuelo") && (s.vuelo_origen || s.vuelo_destino)) {
-        base = `Vuelo ${textoEscalas(s.vuelo_escalas)} de ${s.vuelo_origen} a ${s.vuelo_destino}`;
-        if (s.vuelo_clase) base += `, clase ${s.vuelo_clase}`;
-        if (s.vuelo_equipaje) base += `, equipaje ${s.vuelo_equipaje}`;
-        return base;
-      }
+      // ALOJAMIENTO: "<noches>, <categoria_hab>, <regimen>"
+      if (tipo.includes("aloj")) {
+        const noches = s.aloj_noches;
+        const catHab = pickOtro(s.aloj_categoria_hab, s.aloj_categoria_hab_otro);
+        const regimen = pickOtro(s.aloj_regimen, s.aloj_regimen_otro);
 
-      // Tren
-      if (tipo.includes("tren") && (s.tren_origen || s.tren_destino)) {
-        base = `Tren ${textoEscalas(s.tren_escalas)} de ${s.tren_origen} a ${s.tren_destino}`;
-        if (s.tren_clase) base += `, clase ${s.tren_clase}`;
-        if (s.tren_equipaje) base += `, equipaje ${s.tren_equipaje}`;
-        if (s.tren_sillas_reservadas != null) {
-          base += s.tren_sillas_reservadas ? `, asientos reservados` : `, sin asientos reservados`;
+        if (noches != null || catHab || regimen) {
+          const nTxt = (Number(noches) === 1) ? "1 noche" : `${Number(noches || 0)} noches`;
+          const habTxt = catHab ? `habitación ${catHab}` : "habitación";
+          const regTxt = regimen ? regimen : "";
+          return `${nTxt}, ${habTxt}${regTxt ? `, ${regTxt}` : ""}`;
         }
-        return base;
       }
 
-      // Boleto
-      if (tipo.includes("boleto") && (s.be_lugar || s.be_tipo)) {
-        base = `Entrada: ${s.be_lugar || "Lugar"}`;
-        if (s.be_tipo) base += `, ${s.be_tipo}`;
-        if (s.be_tipo === "OTRA" && s.be_tipo_otro) base += ` (${s.be_tipo_otro})`;
-        if (s.be_audioguia != null) base += s.be_audioguia ? `, con audioguía` : `, sin audioguía`;
-        if (s.be_idioma) base += `, idioma ${s.be_idioma}`;
-        return base;
+      // TRASLADO: "Traslado <privado/compartido> <origen> – <destino>"
+      if (tipo.includes("trasl") && (s.traslado_origen || s.traslado_destino)) {
+        const privTxt = toPrivadoTexto(!!s.privado);
+        return `Traslado ${privTxt} ${s.traslado_origen || "origen"} – ${s.traslado_destino || "destino"}`;
       }
 
-      // Alojamiento
-      if (tipo.includes("aloj") && s.noches_alojamiento) {
-        return `Alojamiento: ${base} (${s.noches_alojamiento} noche(s))`;
+      // VISITA/EXCURSIÓN: "<descripcion>, <privado/en grupo>, <tiempo_servicio>, <tipo_guia> en <idioma>"
+      if (tipo.includes("excurs") || tipo.includes("visita") || tipo.includes("tour")) {
+        const desc = String(s.descripcion || "").trim() || (s.nombre_wtravel || `Servicio #${s.id}`);
+        const grupoTxt = toGrupoTexto(!!s.privado);
+
+        const tiempoTxt = String(s.tiempo_servicio || "").trim();
+        const tipoGuia = String(s.tour_tipo_guia || "").trim();
+        const idioma = String(s.tour_idioma || "").trim();
+
+        const partes = [
+          desc,
+          grupoTxt,
+          tiempoTxt,
+          (tipoGuia && idioma) ? `${tipoGuia} en ${idioma}` : (tipoGuia || idioma || "")
+        ].filter(Boolean);
+
+        return partes.join(", ");
       }
 
-      return base;
+
+      // BOLETO: "<descripcion>, <tipo_entrada>, <tipo_guia> en <idioma>"
+      if (tipo.includes("boleto") && (s.be_tipo || s.be_lugar || s.be_idioma)) {
+        const desc = String(s.descripcion || "").trim() || "Entrada";
+        const tipoEntrada = (s.be_tipo === "OTRA" && s.be_tipo_otro) ? s.be_tipo_otro : s.be_tipo;
+        const tipoGuia = (s.be_audioguia != null && Number(s.be_audioguia) === 1) ? "audioguía" : "guía";
+        const idioma = s.be_idioma || "idioma";
+        return `${desc}, ${tipoEntrada || "tipo de entrada"}, ${tipoGuia} en ${idioma}`;
+      }
+
+      // TREN: "Tren <escalas> <origen> – <destino>, clase X, sillas reservadas/sin sillas reservadas"
+      if (tipo.includes("tren") && (s.tren_origen || s.tren_destino)) {
+        const esc = textoEscalas(s.tren_escalas);
+        const base = `Tren ${esc} ${s.tren_origen || "origen"} – ${s.tren_destino || "destino"}`;
+        const clase = s.tren_clase ? `, clase ${s.tren_clase}` : "";
+        let sillas = "";
+        if (s.tren_sillas_reservadas != null) {
+          sillas = s.tren_sillas_reservadas ? `, sillas reservadas` : `, sin sillas reservadas`;
+        }
+        return `${base}${clase}${sillas}`;
+      }
+
+      // VUELO: "Vuelo <escalas> <origen> – <destino>, clase X, equipaje Y"
+      if (tipo.includes("vuelo") && (s.vuelo_origen || s.vuelo_destino)) {
+        const esc = textoEscalas(s.vuelo_escalas);
+        const base = `Vuelo ${esc} ${s.vuelo_origen || "origen"} – ${s.vuelo_destino || "destino"}`;
+        const clase = s.vuelo_clase ? `, clase ${s.vuelo_clase}` : "";
+        const equipaje = s.vuelo_equipaje ? `, equipaje ${s.vuelo_equipaje}` : "";
+        return `${base}${clase}${equipaje}`;
+      }
+
+      return s.nombre_wtravel || `Servicio #${s.id}`;
     }
 
     const rowsFinal = rows.map(r => ({
@@ -498,6 +685,8 @@ router.get("/servicios", async (_req, res) => {
       mensaje: "Error listando servicios",
       error: e.message
     });
+  } finally {
+    try { if (conn) conn.release(); } catch {}
   }
 });
 
@@ -505,11 +694,14 @@ router.get("/servicios", async (_req, res) => {
    GET /api/servicios/:id
 ========================================================= */
 router.get("/servicios/:id", async (req, res) => {
+  let conn;
   try {
+    conn = await pool.getConnection();
+
     const id = Number(req.params.id);
     if (!id) return res.status(400).json({ ok: false, mensaje: "id inválido" });
 
-    const [rows] = await pool.execute(
+    const [rows] = await conn.execute(
       `
       SELECT s.id, s.id_tipo, s.id_proveedor, s.id_ciudad,
              s.nombre_wtravel, s.tiempo_servicio, s.privado, s.descripcion, s.link_reserva,
@@ -531,8 +723,7 @@ router.get("/servicios/:id", async (req, res) => {
 
     const base = rows[0];
 
-    // Alojamiento (incluye *_otro)
-    const [alojaRows] = await pool.execute(
+    const [alojaRows] = await conn.execute(
       `
       SELECT
         noches,
@@ -551,8 +742,7 @@ router.get("/servicios/:id", async (req, res) => {
     );
     const alojamiento = alojaRows[0] || null;
 
-    // Horas
-    const [hrsRows] = await pool.execute(
+    const [hrsRows] = await conn.execute(
       `
       SELECT DATE_FORMAT(hora,'%H:%i') AS hora
       FROM serviciohora
@@ -563,8 +753,7 @@ router.get("/servicios/:id", async (req, res) => {
     );
     const horas = hrsRows.map(x => x.hora);
 
-    // Boleto entrada
-    const [beRows] = await pool.execute(
+    const [beRows] = await conn.execute(
       `
       SELECT
         boleto_entrada,
@@ -579,8 +768,7 @@ router.get("/servicios/:id", async (req, res) => {
     );
     const boleto_entrada = beRows[0] || null;
 
-    // Vuelo
-    const [vueloRows] = await pool.execute(
+    const [vueloRows] = await conn.execute(
       `
       SELECT origen, destino, escalas, clase, equipaje
       FROM vuelo
@@ -590,33 +778,23 @@ router.get("/servicios/:id", async (req, res) => {
     );
     const vuelo = vueloRows[0] || null;
 
-    // Tren (equipaje puede no existir)
-    const [trenColsRows] = await pool.execute(
+    const [trenRows] = await conn.execute(
       `
-      SELECT COLUMN_NAME
-      FROM INFORMATION_SCHEMA.COLUMNS
-      WHERE TABLE_SCHEMA = DATABASE()
-        AND TABLE_NAME = 'tren'
-        AND COLUMN_NAME = 'equipaje'
-      `
-    );
-    const trenTieneEquipaje = trenColsRows.length > 0;
-
-    const trenSelect = trenTieneEquipaje
-      ? `SELECT origen, destino, escalas, clase, equipaje, sillas_reservadas FROM tren WHERE id_servicio = ?`
-      : `SELECT origen, destino, escalas, clase, sillas_reservadas FROM tren WHERE id_servicio = ?`;
-
-    const [trenRows] = await pool.execute(trenSelect, [id]);
+      SELECT origen, destino, escalas, clase, sillas_reservadas
+      FROM tren
+      WHERE id_servicio = ?
+      `,
+      [id]
+    ).catch(() => [[]]);
     const tren = trenRows[0] || null;
 
-    // Traslado / Tour (si no existen, no rompe)
-    const [trasRows] = await pool.execute(
+    const [trasRows] = await conn.execute(
       `SELECT * FROM traslado WHERE id_servicio = ?`,
       [id]
     ).catch(() => [[]]);
     const traslado = trasRows[0] || null;
 
-    const [tourRows] = await pool.execute(
+    const [tourRows] = await conn.execute(
       `SELECT * FROM tour WHERE id_servicio = ?`,
       [id]
     ).catch(() => [[]]);
@@ -651,6 +829,8 @@ router.get("/servicios/:id", async (req, res) => {
   } catch (e) {
     console.error("GET /servicios/:id", e);
     return res.status(500).json({ ok: false, mensaje: "Error obteniendo servicio", error: e.message });
+  } finally {
+    try { if (conn) conn.release(); } catch {}
   }
 });
 
