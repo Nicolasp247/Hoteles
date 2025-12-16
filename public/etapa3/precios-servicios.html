@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Precios por servicio</title>
+  <link rel="stylesheet" href="../css/estilos.css" />
+  <style>
+    .grid { display: grid; gap: 12px; }
+    .row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; align-items: end; }
+    .row2 { display: grid; grid-template-columns: 2fr 160px 160px 160px; gap: 10px; align-items: end; }
+
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ddd; padding: 8px; }
+    th { text-align: left; }
+    input[type="number"] { width: 140px; }
+    .muted { opacity: 0.8; font-size: 0.95em; }
+    .msg { margin-top: 10px; }
+
+    .card {
+      border: 1px solid #ddd;
+      padding: 12px;
+      border-radius: 8px;
+      background: #fff;
+    }
+    .kv { display: grid; grid-template-columns: 160px 1fr; gap: 8px; }
+    .kv div { padding: 2px 0; }
+    .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+    .edit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .edit-grid .full { grid-column: 1 / -1; }
+    textarea { width: 100%; min-height: 90px; }
+    .hide { display: none; }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <h1>Precios por servicio (NO alojamiento)</h1>
+    <p class="muted">Filtra por ubicación para que el servicio tenga contexto. Si dejas un mes vacío, queda NULL.</p>
+
+    <section class="grid">
+
+      <!-- Filtros ubicación -->
+      <div class="row">
+        <div>
+          <label>Continente</label>
+          <select id="filtro-continente"></select>
+        </div>
+        <div>
+          <label>País</label>
+          <select id="filtro-pais"></select>
+        </div>
+        <div>
+          <label>Ciudad</label>
+          <select id="filtro-ciudad"></select>
+        </div>
+        <div>
+          <label>Tipo</label>
+          <select id="filtro-tipo"></select>
+        </div>
+      </div>
+
+      <!-- Servicio + año + tipo habitación -->
+      <div class="row2">
+        <div>
+          <label>Servicio</label>
+          <select id="sel-servicio"></select>
+        </div>
+
+        <div>
+          <label>Año</label>
+          <input id="inp-anio" type="number" min="2000" max="2100" />
+        </div>
+
+        <div>
+          <label>Tipo habitación</label>
+          <select id="sel-tipo-hab">
+            <option value="DBL">DBL</option>
+            <option value="SGL">SGL</option>
+            <option value="TPL">TPL</option>
+          </select>
+        </div>
+
+        <div class="actions">
+          <button id="btn-cargar" type="button">Cargar</button>
+        </div>
+      </div>
+
+      <!-- Detalles del servicio -->
+      <div class="card">
+        <div class="actions">
+          <strong>Detalle del servicio</strong>
+          <button id="btn-editar" type="button" class="hide">Editar info</button>
+          <button id="btn-cancelar-edicion" type="button" class="hide">Cancelar</button>
+          <button id="btn-guardar-edicion" type="button" class="hide">Guardar cambios</button>
+        </div>
+
+        <div id="srv-detalle" class="kv" style="margin-top:10px;">
+          <div class="muted">Selecciona un servicio para ver detalles.</div>
+        </div>
+
+        <!-- Form edición -->
+        <div id="srv-editar" class="hide" style="margin-top:12px;">
+          <div class="edit-grid">
+            <div class="full">
+              <label>Nombre WTravel</label>
+              <input id="ed-nombre" type="text" />
+            </div>
+
+            <div>
+              <label>Proveedor</label>
+              <select id="ed-proveedor"></select>
+            </div>
+
+            <div>
+              <label>Tiempo del servicio</label>
+              <input id="ed-tiempo" type="text" placeholder="Ej: 4h 30m" />
+            </div>
+
+            <div>
+              <label>Privado</label>
+              <select id="ed-privado">
+                <option value="0">No</option>
+                <option value="1">Sí</option>
+              </select>
+            </div>
+
+            <div class="full">
+              <label>Link reserva</label>
+              <input id="ed-link" type="text" placeholder="https://..." />
+            </div>
+
+            <div class="full">
+              <label>Descripción</label>
+              <textarea id="ed-desc" placeholder="Descripción del servicio"></textarea>
+            </div>
+
+            <div class="full muted" id="ed-readonly"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tabla precios -->
+      <table>
+        <thead>
+          <tr>
+            <th>Mes</th>
+            <th>Precio USD</th>
+          </tr>
+        </thead>
+        <tbody id="tbody-precios"></tbody>
+      </table>
+
+      <div class="actions">
+        <button id="btn-guardar" type="button">Guardar precios</button>
+        <span id="msg" class="msg"></span>
+      </div>
+
+    </section>
+  </main>
+
+  <script src="./precios-servicios.js"></script>
+</body>
+</html>

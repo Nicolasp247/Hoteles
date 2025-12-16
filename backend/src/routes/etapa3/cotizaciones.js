@@ -1,7 +1,7 @@
 // backend/src/routes/etapa3/cotizaciones.js
 const express = require("express");
 const router = express.Router();
-const db = require("../../db"); // pool mysql2/promise
+const db = require("../../db"); // mysql2/promise pool
 
 // =======================
 // Helpers
@@ -12,9 +12,9 @@ function intOrZero(value) {
 }
 
 function generarNombreCotizacion(fechaViaje, agente, nombrePasajero, totalPasajeros) {
-  const [yearStr, monthStr] = fechaViaje.split("-");
+  const [yearStr, monthStr] = String(fechaViaje).split("-");
   const yy = yearStr.slice(-2);
-  const mm = monthStr.padStart(2, "0");
+  const mm = String(monthStr || "").padStart(2, "0");
   const sufijo = totalPasajeros === 1 ? "persona" : "personas";
   return `${yy}${mm} ${agente} ${nombrePasajero} ${totalPasajeros} ${sufijo}`;
 }
@@ -28,7 +28,6 @@ function esTipoSinPrecio(nombreTipo) {
   return t.includes("vuelo") || t.includes("tren");
 }
 
-// Texto “Directo / X escala(s)”
 function textoEscalas(escalas) {
   const n = Number(escalas);
   if (!Number.isFinite(n) || n <= 0) return "directo";
@@ -36,9 +35,7 @@ function textoEscalas(escalas) {
 }
 
 function buildTextoVuelo(row) {
-  // si no hay subtabla vuelo, devolvemos null para caer al nombre_servicio
   if (!row.vuelo_origen && !row.vuelo_destino) return null;
-
   const base = `Vuelo ${textoEscalas(row.vuelo_escalas)} de ${row.vuelo_origen} a ${row.vuelo_destino}`;
   const clase = row.vuelo_clase ? `, clase ${row.vuelo_clase}` : "";
   const equipaje = row.vuelo_equipaje ? `, equipaje ${row.vuelo_equipaje}` : "";
@@ -51,35 +48,23 @@ function buildTextoTren(row) {
   const base = `Tren ${textoEscalas(row.tren_escalas)} de ${row.tren_origen} a ${row.tren_destino}`;
   const clase = row.tren_clase ? `, clase ${row.tren_clase}` : "";
 
-  // IMPORTANTE: tu tabla tren NO tiene equipaje (y tu formato final no lo usa).
-  // Así evitamos el error y alineamos con el formato.
   let sillas = "";
   if (row.tren_sillas_reservadas != null) {
     sillas = row.tren_sillas_reservadas ? `, asientos reservados` : `, sin asientos reservados`;
   }
-
   return `${base}${clase}${sillas}`;
 }
 
-// Construye servicio_texto final (con prefijos + subtipos)
 function buildServicioTexto(row) {
   const tipo = row.tipo_servicio || "";
 
-  // 1) Base: preferimos subtexto si existe
   const textoVuelo = buildTextoVuelo(row);
-  const textoTren  = buildTextoTren(row);
+  const textoTren = buildTextoTren(row);
 
   let base = row.titulo_override || textoVuelo || textoTren || row.nombre_servicio || "";
 
-  // 2) Prefijo alojamiento
-  if (esTipoAlojamiento(tipo)) {
-    base = `Alojamiento: ${base}`;
-  }
-
-  // 3) Prefijo opcional
-  if (row.es_opcional) {
-    base = `Opcional: ${base}`;
-  }
+  if (esTipoAlojamiento(tipo)) base = `Alojamiento: ${base}`;
+  if (row.es_opcional) base = `Opcional: ${base}`;
 
   return base;
 }
@@ -88,6 +73,7 @@ function buildServicioTexto(row) {
 // Rutas
 // =======================
 
+// Crear cotización
 router.post("/cotizaciones", async (req, res) => {
   try {
     const {
@@ -111,44 +97,24 @@ router.post("/cotizaciones", async (req, res) => {
       });
     }
 
-    const adultos65   = intOrZero(adultos_65);
+    const adultos65 = intOrZero(adultos_65);
     const adultos1964 = intOrZero(adultos_19_64);
     const jovenes1218 = intOrZero(jovenes_12_18);
-    const ninos311    = intOrZero(ninos_3_11);
-    const infantes02  = intOrZero(infantes_0_2);
+    const ninos311 = intOrZero(ninos_3_11);
+    const infantes02 = intOrZero(infantes_0_2);
 
-    const total_pasajeros =
-      adultos65 + adultos1964 + jovenes1218 + ninos311 + infantes02;
-
+    const total_pasajeros = adultos65 + adultos1964 + jovenes1218 + ninos311 + infantes02;
     if (total_pasajeros <= 0) {
-      return res.status(400).json({
-        ok: false,
-        mensaje: "Debe haber al menos 1 pasajero en la cotización."
-      });
+      return res.status(400).json({ ok: false, mensaje: "Debe haber al menos 1 pasajero en la cotización." });
     }
 
-    const nombre_cotizacion = generarNombreCotizacion(
-      fecha_viaje,
-      agente,
-      nombre_pasajero,
-      total_pasajeros
-    );
+    const nombre_cotizacion = generarNombreCotizacion(fecha_viaje, agente, nombre_pasajero, total_pasajeros);
 
     const sql = `
       INSERT INTO cotizacion (
-        agente,
-        nombre_pasajero,
-        adultos_65,
-        adultos_19_64,
-        jovenes_12_18,
-        ninos_3_11,
-        infantes_0_2,
-        total_pasajeros,
-        categorias,
-        fecha_viaje,
-        nombre_cotizacion,
-        moneda_id,
-        nota
+        agente, nombre_pasajero,
+        adultos_65, adultos_19_64, jovenes_12_18, ninos_3_11, infantes_0_2,
+        total_pasajeros, categorias, fecha_viaje, nombre_cotizacion, moneda_id, nota
       )
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
@@ -198,6 +164,7 @@ router.post("/cotizaciones", async (req, res) => {
   }
 });
 
+// Listar cotizaciones
 router.get("/cotizaciones", async (_req, res) => {
   try {
     const [rows] = await db.execute(`
@@ -224,20 +191,14 @@ router.get("/cotizaciones", async (_req, res) => {
   }
 });
 
+// Obtener cotización + items
 router.get("/cotizaciones/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
-    if (Number.isNaN(id)) {
-      return res.status(400).json({ ok: false, mensaje: "ID de cotización inválido." });
-    }
+    if (Number.isNaN(id)) return res.status(400).json({ ok: false, mensaje: "ID de cotización inválido." });
 
-    const [cabRows] = await db.execute(
-      "SELECT * FROM cotizacion WHERE id_cotizacion = ?",
-      [id]
-    );
-    if (cabRows.length === 0) {
-      return res.status(404).json({ ok: false, mensaje: "Cotización no encontrada." });
-    }
+    const [cabRows] = await db.execute("SELECT * FROM cotizacion WHERE id_cotizacion = ?", [id]);
+    if (cabRows.length === 0) return res.status(404).json({ ok: false, mensaje: "Cotización no encontrada." });
     const cabecera = cabRows[0];
 
     const [itemRowsRaw] = await db.execute(
@@ -268,17 +229,16 @@ router.get("/cotizaciones/:id", async (req, res) => {
         c.nombre                AS ciudad,
         a.noches                AS noches_alojamiento,
 
-        -- Subtablas para formateo
-        v.origen  AS vuelo_origen,
-        v.destino AS vuelo_destino,
-        v.escalas AS vuelo_escalas,
-        v.clase   AS vuelo_clase,
+        v.origen   AS vuelo_origen,
+        v.destino  AS vuelo_destino,
+        v.escalas  AS vuelo_escalas,
+        v.clase    AS vuelo_clase,
         v.equipaje AS vuelo_equipaje,
 
-        t.origen  AS tren_origen,
-        t.destino AS tren_destino,
-        t.escalas AS tren_escalas,
-        t.clase   AS tren_clase,
+        t.origen            AS tren_origen,
+        t.destino           AS tren_destino,
+        t.escalas           AS tren_escalas,
+        t.clase             AS tren_clase,
         t.sillas_reservadas AS tren_sillas_reservadas
 
       FROM cotizacion_item ci
@@ -294,17 +254,9 @@ router.get("/cotizaciones/:id", async (req, res) => {
       [id]
     );
 
-    const items = itemRowsRaw.map(row => ({
-      ...row,
-      servicio_texto: buildServicioTexto(row)
-    }));
+    const items = itemRowsRaw.map(row => ({ ...row, servicio_texto: buildServicioTexto(row) }));
 
-    return res.json({
-      ok: true,
-      cotizacion: cabecera,
-      cabecera,
-      items
-    });
+    return res.json({ ok: true, cotizacion: cabecera, cabecera, items });
 
   } catch (error) {
     console.error("Error al obtener cotización:", error);
@@ -316,12 +268,11 @@ router.get("/cotizaciones/:id", async (req, res) => {
   }
 });
 
+// Insertar item en cotización
 router.post("/cotizaciones/:id/items", async (req, res) => {
   try {
     const idCotizacion = parseInt(req.params.id, 10);
-    if (Number.isNaN(idCotizacion)) {
-      return res.status(400).json({ ok: false, mensaje: "ID de cotización inválido." });
-    }
+    if (Number.isNaN(idCotizacion)) return res.status(400).json({ ok: false, mensaje: "ID de cotización inválido." });
 
     const {
       id_servicio,
@@ -364,18 +315,10 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
     const [result] = await db.execute(
       `
       INSERT INTO cotizacion_item (
-        id_cotizacion,
-        id_servicio,
-        fecha_servicio,
-        orden_dia,
-        es_opcional,
-        operador_mostrado,
-        link_operador,
-        titulo_override,
-        clase_override,
-        idioma_override,
-        nota_linea,
-        precio_usd
+        id_cotizacion, id_servicio, fecha_servicio, orden_dia,
+        es_opcional, operador_mostrado, link_operador,
+        titulo_override, clase_override, idioma_override,
+        nota_linea, precio_usd
       )
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
@@ -397,7 +340,6 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
 
     const idItem = result.insertId;
 
-    // IMPORTANTÍSIMO: aquí estaba el error por t.equipaje (NO existe en tu tabla tren)
     const [rows] = await db.execute(
       `
       SELECT
@@ -426,16 +368,16 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
         c.nombre                AS ciudad,
         a.noches                AS noches_alojamiento,
 
-        v.origen  AS vuelo_origen,
-        v.destino AS vuelo_destino,
-        v.escalas AS vuelo_escalas,
-        v.clase   AS vuelo_clase,
+        v.origen   AS vuelo_origen,
+        v.destino  AS vuelo_destino,
+        v.escalas  AS vuelo_escalas,
+        v.clase    AS vuelo_clase,
         v.equipaje AS vuelo_equipaje,
 
-        t.origen  AS tren_origen,
-        t.destino AS tren_destino,
-        t.escalas AS tren_escalas,
-        t.clase   AS tren_clase,
+        t.origen            AS tren_origen,
+        t.destino           AS tren_destino,
+        t.escalas           AS tren_escalas,
+        t.clase             AS tren_clase,
         t.sillas_reservadas AS tren_sillas_reservadas
 
       FROM cotizacion_item ci
@@ -454,10 +396,7 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
 
     return res.status(201).json({
       ok: true,
-      item: {
-        ...row,
-        servicio_texto: buildServicioTexto(row)
-      }
+      item: { ...row, servicio_texto: buildServicioTexto(row) }
     });
 
   } catch (error) {
@@ -470,30 +409,69 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
   }
 });
 
+// =========================================================
+// PUT /api/cotizaciones/:id/items/orden
+// Plan A: guardar orden por id_item (sin tocar fecha_servicio)
+// =========================================================
+router.put("/cotizaciones/:id/items/orden", async (req, res) => {
+  let conn;
+  try {
+    const idCotizacion = Number(req.params.id);
+    const orden = Array.isArray(req.body?.orden) ? req.body.orden : [];
+
+    if (!idCotizacion) return res.status(400).json({ ok: false, mensaje: "ID de cotización inválido." });
+    if (orden.length === 0) return res.status(400).json({ ok: false, mensaje: "Payload inválido: orden[] requerido." });
+
+    const rows = orden
+      .map(x => ({ id_item: Number(x.id_item), orden_dia: Number(x.orden_dia) }))
+      .filter(x => Number.isFinite(x.id_item) && x.id_item > 0 && Number.isFinite(x.orden_dia) && x.orden_dia > 0);
+
+    if (rows.length === 0) {
+      return res.status(400).json({ ok: false, mensaje: "No hay filas válidas en orden[] (id_item/orden_dia)." });
+    }
+
+    conn = await db.getConnection();
+    await conn.beginTransaction();
+
+    const sql = `
+      UPDATE cotizacion_item
+      SET orden_dia = ?
+      WHERE id_item = ?
+        AND id_cotizacion = ?
+    `;
+
+    for (const r of rows) {
+      const [result] = await conn.execute(sql, [r.orden_dia, r.id_item, idCotizacion]);
+      if (!result.affectedRows) {
+        throw new Error(`No se pudo actualizar id_item=${r.id_item} (no existe o no pertenece a la cotización ${idCotizacion}).`);
+      }
+    }
+
+    await conn.commit();
+    return res.json({ ok: true, mensaje: "Orden actualizado", count: rows.length });
+
+  } catch (error) {
+    try { if (conn) await conn.rollback(); } catch {}
+    console.error("PUT /cotizaciones/:id/items/orden", error);
+    return res.status(500).json({ ok: false, mensaje: "Error guardando el orden.", error: error.message });
+  } finally {
+    try { if (conn) conn.release(); } catch {}
+  }
+});
+
+// Eliminar item
 router.delete("/cotizaciones/items/:id_item", async (req, res) => {
   try {
     const idItem = Number(req.params.id_item);
-    if (!idItem) {
-      return res.status(400).json({ ok: false, mensaje: "id_item inválido" });
-    }
+    if (!idItem) return res.status(400).json({ ok: false, mensaje: "id_item inválido" });
 
-    const [result] = await db.execute(
-      "DELETE FROM cotizacion_item WHERE id_item = ?",
-      [idItem]
-    );
-
-    if (!result.affectedRows) {
-      return res.status(404).json({ ok: false, mensaje: "Item no encontrado" });
-    }
+    const [result] = await db.execute("DELETE FROM cotizacion_item WHERE id_item = ?", [idItem]);
+    if (!result.affectedRows) return res.status(404).json({ ok: false, mensaje: "Item no encontrado" });
 
     res.json({ ok: true, mensaje: "Item eliminado" });
   } catch (error) {
     console.error("DELETE /cotizaciones/items/:id_item", error);
-    res.status(500).json({
-      ok: false,
-      mensaje: "Error interno al eliminar el item.",
-      error: error.message
-    });
+    res.status(500).json({ ok: false, mensaje: "Error interno al eliminar el item.", error: error.message });
   }
 });
 

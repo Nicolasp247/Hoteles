@@ -37,7 +37,7 @@ async function getTableColumns(conn, tableName) {
     [tableName]
   );
 
-  const cols = rows.map(r => r.COLUMN_NAME);
+  const cols = rows.map((r) => r.COLUMN_NAME);
   _colsCache.set(tableName, cols);
   return cols;
 }
@@ -52,12 +52,12 @@ async function insertDynamicOneToOne(conn, tableName, id_servicio, obj) {
   const payload = { ...obj, id_servicio };
 
   // Filtrar claves que sí existen como columnas
-  const keys = Object.keys(payload).filter(k => cols.includes(k));
+  const keys = Object.keys(payload).filter((k) => cols.includes(k));
   if (keys.length === 0) return false;
 
   const placeholders = keys.map(() => "?").join(", ");
   const sql = `INSERT INTO ${tableName} (${keys.join(", ")}) VALUES (${placeholders})`;
-  const values = keys.map(k => payload[k]);
+  const values = keys.map((k) => payload[k]);
 
   await conn.execute(sql, values);
   return true;
@@ -79,7 +79,7 @@ function textoEscalas(escalas) {
 
 function pickOtro(enumVal, otroVal) {
   if (!enumVal) return null;
-  if (String(enumVal).toUpperCase() === "OTRO") return (otroVal || null);
+  if (String(enumVal).toUpperCase() === "OTRO") return otroVal || null;
   return enumVal;
 }
 
@@ -104,7 +104,9 @@ router.get("/proveedores", async (_req, res) => {
     res.json({ ok: true, proveedores: rows });
   } catch (e) {
     console.error("GET /proveedores", e);
-    res.status(500).json({ ok: false, mensaje: "Error listando proveedores", error: e.message });
+    res
+      .status(500)
+      .json({ ok: false, mensaje: "Error listando proveedores", error: e.message });
   }
 });
 
@@ -133,21 +135,21 @@ router.post("/servicios", async (req, res) => {
       vuelo,
       tren,
       traslado,
-      tour
+      tour,
     } = req.body || {};
 
     if (!id_tipo || !id_proveedor || !id_ciudad || !nombre_wtravel) {
       return res.status(400).json({
         ok: false,
-        mensaje: "Faltan campos obligatorios: id_tipo, id_proveedor, id_ciudad, nombre_wtravel."
+        mensaje:
+          "Faltan campos obligatorios: id_tipo, id_proveedor, id_ciudad, nombre_wtravel.",
       });
     }
 
     // Detectar nombre del tipo para validar mínimos según formato
-    const [[tipoRow]] = await conn.execute(
-      `SELECT nombre FROM tiposervicio WHERE id = ?`,
-      [Number(id_tipo)]
-    );
+    const [[tipoRow]] = await conn.execute(`SELECT nombre FROM tiposervicio WHERE id = ?`, [
+      Number(id_tipo),
+    ]);
     const tipoNombre = (tipoRow?.nombre || "").toLowerCase();
     const descTrim = String(descripcion || "").trim();
 
@@ -164,10 +166,19 @@ router.post("/servicios", async (req, res) => {
       const equipaje = String(v.equipaje || "").trim();
       const escalas = v.escalas;
 
-      if (!origen || !destino || !clase || !equipaje || escalas === undefined || escalas === null || escalas === "") {
+      if (
+        !origen ||
+        !destino ||
+        !clase ||
+        !equipaje ||
+        escalas === undefined ||
+        escalas === null ||
+        escalas === ""
+      ) {
         return res.status(400).json({
           ok: false,
-          mensaje: "Para VUELO son obligatorios: escalas, origen, destino, clase y equipaje."
+          mensaje:
+            "Para VUELO son obligatorios: escalas, origen, destino, clase y equipaje.",
         });
       }
     }
@@ -179,12 +190,24 @@ router.post("/servicios", async (req, res) => {
       const destino = String(t.destino || "").trim();
       const clase = String(t.clase || "").trim();
       const escalas = t.escalas;
-      const hasSillas = (t.sillas_reservadas !== undefined && t.sillas_reservadas !== null && t.sillas_reservadas !== "");
+      const hasSillas =
+        t.sillas_reservadas !== undefined &&
+        t.sillas_reservadas !== null &&
+        t.sillas_reservadas !== "";
 
-      if (!origen || !destino || !clase || escalas === undefined || escalas === null || escalas === "" || !hasSillas) {
+      if (
+        !origen ||
+        !destino ||
+        !clase ||
+        escalas === undefined ||
+        escalas === null ||
+        escalas === "" ||
+        !hasSillas
+      ) {
         return res.status(400).json({
           ok: false,
-          mensaje: "Para TREN son obligatorios: escalas, origen, destino, clase y sillas_reservadas."
+          mensaje:
+            "Para TREN son obligatorios: escalas, origen, destino, clase y sillas_reservadas.",
         });
       }
     }
@@ -199,15 +222,21 @@ router.post("/servicios", async (req, res) => {
       if (!Number.isFinite(noches) || noches <= 0 || !regimen || !catHab) {
         return res.status(400).json({
           ok: false,
-          mensaje: "Para ALOJAMIENTO son obligatorios: noches, categoría de habitación y régimen."
+          mensaje:
+            "Para ALOJAMIENTO son obligatorios: noches, categoría de habitación y régimen.",
         });
       }
 
       if (regimen === "OTRO" && !String(a.regimen_otro || "").trim()) {
-        return res.status(400).json({ ok: false, mensaje: "Régimen OTRO requiere especificar regimen_otro." });
+        return res
+          .status(400)
+          .json({ ok: false, mensaje: "Régimen OTRO requiere especificar regimen_otro." });
       }
       if (catHab === "OTRO" && !String(a.categoria_hab_otro || "").trim()) {
-        return res.status(400).json({ ok: false, mensaje: "Categoría habitación OTRO requiere categoria_hab_otro." });
+        return res.status(400).json({
+          ok: false,
+          mensaje: "Categoría habitación OTRO requiere categoria_hab_otro.",
+        });
       }
     }
 
@@ -219,7 +248,7 @@ router.post("/servicios", async (req, res) => {
       if (!origen || !destino) {
         return res.status(400).json({
           ok: false,
-          mensaje: "Para TRASLADO son obligatorios: origen y destino."
+          mensaje: "Para TRASLADO son obligatorios: origen y destino.",
         });
       }
     }
@@ -231,29 +260,36 @@ router.post("/servicios", async (req, res) => {
       if (!descTrim) {
         return res.status(400).json({
           ok: false,
-          mensaje: "Para VISITA/EXCURSIÓN es obligatoria la descripción del servicio."
+          mensaje: "Para VISITA/EXCURSIÓN es obligatoria la descripción del servicio.",
         });
       }
 
-      // tipo_guia selectable (viene como tu.tipo_guia)
       const tipoGuia = String(tu.tipo_guia || "").trim();
       const tipoGuiaOtro = String(tu.tipo_guia_otro || "").trim();
 
-      // idioma selectable (viene como tu.idioma)
       const idioma = String(tu.idioma || "").trim();
       const idiomaOtro = String(tu.idioma_otro || "").trim();
 
       if (!tipoGuia) {
-        return res.status(400).json({ ok: false, mensaje: "Para VISITA/EXCURSIÓN falta tipo_guia." });
+        return res
+          .status(400)
+          .json({ ok: false, mensaje: "Para VISITA/EXCURSIÓN falta tipo_guia." });
       }
       if (!idioma) {
-        return res.status(400).json({ ok: false, mensaje: "Para VISITA/EXCURSIÓN falta idioma." });
+        return res
+          .status(400)
+          .json({ ok: false, mensaje: "Para VISITA/EXCURSIÓN falta idioma." });
       }
       if (tipoGuia === "OTRO" && !tipoGuiaOtro) {
-        return res.status(400).json({ ok: false, mensaje: "tipo_guia OTRO requiere especificar tipo_guia_otro." });
+        return res.status(400).json({
+          ok: false,
+          mensaje: "tipo_guia OTRO requiere especificar tipo_guia_otro.",
+        });
       }
       if (idioma === "OTRO" && !idiomaOtro) {
-        return res.status(400).json({ ok: false, mensaje: "idioma OTRO requiere especificar idioma_otro." });
+        return res
+          .status(400)
+          .json({ ok: false, mensaje: "idioma OTRO requiere especificar idioma_otro." });
       }
     }
 
@@ -263,7 +299,7 @@ router.post("/servicios", async (req, res) => {
       if (!descTrim) {
         return res.status(400).json({
           ok: false,
-          mensaje: "Para BOLETO es obligatoria la descripción del servicio."
+          mensaje: "Para BOLETO es obligatoria la descripción del servicio.",
         });
       }
 
@@ -274,14 +310,14 @@ router.post("/servicios", async (req, res) => {
       if (!lugar || !tipoEntrada || !idioma) {
         return res.status(400).json({
           ok: false,
-          mensaje: "Para BOLETO son obligatorios: lugar, tipo_entrada e idioma."
+          mensaje: "Para BOLETO son obligatorios: lugar, tipo_entrada e idioma.",
         });
       }
 
       if (tipoEntrada === "OTRA" && !String(be.tipo_entrada_otro || "").trim()) {
         return res.status(400).json({
           ok: false,
-          mensaje: "Tipo de entrada OTRA requiere especificar tipo_entrada_otro."
+          mensaje: "Tipo de entrada OTRA requiere especificar tipo_entrada_otro.",
         });
       }
     }
@@ -305,7 +341,7 @@ router.post("/servicios", async (req, res) => {
         tiempo_servicio ? String(tiempo_servicio).trim() : null,
         privado ? 1 : 0,
         descTrim || null,
-        link_reserva ? String(link_reserva).trim() : null
+        link_reserva ? String(link_reserva).trim() : null,
       ]
     );
 
@@ -319,7 +355,8 @@ router.post("/servicios", async (req, res) => {
       const regimen_otro = String(alojamiento.regimen_otro || "").trim() || null;
 
       const categoria_hotel = alojamiento.categoria_hotel ?? null;
-      const categoria_hotel_otro = String(alojamiento.categoria_hotel_otro || "").trim() || null;
+      const categoria_hotel_otro =
+        String(alojamiento.categoria_hotel_otro || "").trim() || null;
 
       const categoria_hab = alojamiento.categoria_hab ?? null;
       const categoria_hab_otro = String(alojamiento.categoria_hab_otro || "").trim() || null;
@@ -344,12 +381,12 @@ router.post("/servicios", async (req, res) => {
           alojamiento.noches ?? 1,
           alojamiento.habitaciones ?? 1,
           regimen,
-          (regimen === "OTRO") ? regimen_otro : null,
+          regimen === "OTRO" ? regimen_otro : null,
           categoria_hotel,
-          (categoria_hotel === "OTRO") ? categoria_hotel_otro : null,
+          categoria_hotel === "OTRO" ? categoria_hotel_otro : null,
           categoria_hab,
-          (categoria_hab === "OTRO") ? categoria_hab_otro : null,
-          alojamiento.proveedor_hotel ?? null
+          categoria_hab === "OTRO" ? categoria_hab_otro : null,
+          alojamiento.proveedor_hotel ?? null,
         ]
       );
 
@@ -384,9 +421,9 @@ router.post("/servicios", async (req, res) => {
           id_servicio,
           boleto_entrada.boleto_entrada || null,
           tipo_entrada,
-          (tipo_entrada === "OTRA") ? tipo_entrada_otro : null,
+          tipo_entrada === "OTRA" ? tipo_entrada_otro : null,
           boleto_entrada.audioguia ? 1 : 0,
-          boleto_entrada.idioma || null
+          boleto_entrada.idioma || null,
         ]
       );
 
@@ -402,7 +439,7 @@ router.post("/servicios", async (req, res) => {
         destino: String(vuelo.destino || "").trim(),
         escalas: vuelo.escalas ?? 0,
         clase: String(vuelo.clase || "").trim(),
-        equipaje: String(vuelo.equipaje || "").trim()
+        equipaje: String(vuelo.equipaje || "").trim(),
       });
     }
 
@@ -415,7 +452,7 @@ router.post("/servicios", async (req, res) => {
         clase: String(tren.clase || "").trim(),
         // si existe en tu tabla lo guarda, si no, lo ignora
         equipaje: tren.equipaje ? String(tren.equipaje).trim() : null,
-        sillas_reservadas: tren.sillas_reservadas ? 1 : 0
+        sillas_reservadas: tren.sillas_reservadas ? 1 : 0,
       });
     }
 
@@ -431,7 +468,7 @@ router.post("/servicios", async (req, res) => {
       }
     }
 
-    // ===== TOUR (ajustado EXACTO a tu tabla: tipo_guia, idioma) =====
+    // ===== TOUR =====
     if (tour) {
       const tipoGuiaRaw = String(tour.tipo_guia || "").trim();
       const tipoGuiaOtro = String(tour.tipo_guia_otro || "").trim();
@@ -439,8 +476,8 @@ router.post("/servicios", async (req, res) => {
       const idiomaOtro = String(tour.idioma_otro || "").trim();
 
       // Normalizar OTRO -> texto final guardable en la misma columna
-      const tipo_guia = (tipoGuiaRaw === "OTRO") ? tipoGuiaOtro : tipoGuiaRaw;
-      const idioma = (idiomaRaw === "OTRO") ? idiomaOtro : idiomaRaw;
+      const tipo_guia = tipoGuiaRaw === "OTRO" ? tipoGuiaOtro : tipoGuiaRaw;
+      const idioma = idiomaRaw === "OTRO" ? idiomaOtro : idiomaRaw;
 
       await insertDynamicOneToOne(conn, "tour", id_servicio, {
         tipo_guia,
@@ -461,19 +498,22 @@ router.post("/servicios", async (req, res) => {
     return res.status(201).json({
       ok: true,
       id_servicio,
-      mensaje: "Servicio creado"
+      mensaje: "Servicio creado",
     });
-
   } catch (e) {
-    try { if (conn) await conn.rollback(); } catch {}
+    try {
+      if (conn) await conn.rollback();
+    } catch {}
     console.error("POST /servicios", e);
     return res.status(500).json({
       ok: false,
       mensaje: "Error creando servicio",
-      error: e.message
+      error: e.message,
     });
   } finally {
-    try { if (conn) conn.release(); } catch {}
+    try {
+      if (conn) conn.release();
+    } catch {}
   }
 });
 
@@ -493,11 +533,14 @@ router.post("/servicios/:id/horas", async (req, res) => {
     for (const h of horas) {
       try {
         const hora = toTime(h);
-        if (!hora) { errorCount++; continue; }
-        await pool.execute(
-          "INSERT INTO serviciohora (id_servicio, hora) VALUES (?, ?)",
-          [id_servicio, hora]
-        );
+        if (!hora) {
+          errorCount++;
+          continue;
+        }
+        await pool.execute("INSERT INTO serviciohora (id_servicio, hora) VALUES (?, ?)", [
+          id_servicio,
+          hora,
+        ]);
       } catch {
         errorCount++;
       }
@@ -508,7 +551,7 @@ router.post("/servicios/:id/horas", async (req, res) => {
         ok: true,
         partial: true,
         errorCount,
-        mensaje: "Algunas horas no se insertaron (¿duplicadas o inválidas?)"
+        mensaje: "Algunas horas no se insertaron (¿duplicadas o inválidas?)",
       });
     }
 
@@ -605,7 +648,7 @@ router.get("/servicios", async (_req, res) => {
         const regimen = pickOtro(s.aloj_regimen, s.aloj_regimen_otro);
 
         if (noches != null || catHab || regimen) {
-          const nTxt = (Number(noches) === 1) ? "1 noche" : `${Number(noches || 0)} noches`;
+          const nTxt = Number(noches) === 1 ? "1 noche" : `${Number(noches || 0)} noches`;
           const habTxt = catHab ? `habitación ${catHab}` : "habitación";
           const regTxt = regimen ? regimen : "";
           return `${nTxt}, ${habTxt}${regTxt ? `, ${regTxt}` : ""}`;
@@ -615,12 +658,15 @@ router.get("/servicios", async (_req, res) => {
       // TRASLADO: "Traslado <privado/compartido> <origen> – <destino>"
       if (tipo.includes("trasl") && (s.traslado_origen || s.traslado_destino)) {
         const privTxt = toPrivadoTexto(!!s.privado);
-        return `Traslado ${privTxt} ${s.traslado_origen || "origen"} – ${s.traslado_destino || "destino"}`;
+        return `Traslado ${privTxt} ${s.traslado_origen || "origen"} – ${
+          s.traslado_destino || "destino"
+        }`;
       }
 
       // VISITA/EXCURSIÓN: "<descripcion>, <privado/en grupo>, <tiempo_servicio>, <tipo_guia> en <idioma>"
       if (tipo.includes("excurs") || tipo.includes("visita") || tipo.includes("tour")) {
-        const desc = String(s.descripcion || "").trim() || (s.nombre_wtravel || `Servicio #${s.id}`);
+        const desc =
+          String(s.descripcion || "").trim() || (s.nombre_wtravel || `Servicio #${s.id}`);
         const grupoTxt = toGrupoTexto(!!s.privado);
 
         const tiempoTxt = String(s.tiempo_servicio || "").trim();
@@ -631,18 +677,18 @@ router.get("/servicios", async (_req, res) => {
           desc,
           grupoTxt,
           tiempoTxt,
-          (tipoGuia && idioma) ? `${tipoGuia} en ${idioma}` : (tipoGuia || idioma || "")
+          tipoGuia && idioma ? `${tipoGuia} en ${idioma}` : tipoGuia || idioma || "",
         ].filter(Boolean);
 
         return partes.join(", ");
       }
 
-
       // BOLETO: "<descripcion>, <tipo_entrada>, <tipo_guia> en <idioma>"
       if (tipo.includes("boleto") && (s.be_tipo || s.be_lugar || s.be_idioma)) {
         const desc = String(s.descripcion || "").trim() || "Entrada";
-        const tipoEntrada = (s.be_tipo === "OTRA" && s.be_tipo_otro) ? s.be_tipo_otro : s.be_tipo;
-        const tipoGuia = (s.be_audioguia != null && Number(s.be_audioguia) === 1) ? "audioguía" : "guía";
+        const tipoEntrada = s.be_tipo === "OTRA" && s.be_tipo_otro ? s.be_tipo_otro : s.be_tipo;
+        const tipoGuia =
+          s.be_audioguia != null && Number(s.be_audioguia) === 1 ? "audioguía" : "guía";
         const idioma = s.be_idioma || "idioma";
         return `${desc}, ${tipoEntrada || "tipo de entrada"}, ${tipoGuia} en ${idioma}`;
       }
@@ -654,7 +700,7 @@ router.get("/servicios", async (_req, res) => {
         const clase = s.tren_clase ? `, clase ${s.tren_clase}` : "";
         let sillas = "";
         if (s.tren_sillas_reservadas != null) {
-          sillas = s.tren_sillas_reservadas ? `, sillas reservadas` : `, sin sillas reservadas`;
+          sillas = s.tren_sillas_reservadas ? ", sillas reservadas" : ", sin sillas reservadas";
         }
         return `${base}${clase}${sillas}`;
       }
@@ -662,7 +708,9 @@ router.get("/servicios", async (_req, res) => {
       // VUELO: "Vuelo <escalas> <origen> – <destino>, clase X, equipaje Y"
       if (tipo.includes("vuelo") && (s.vuelo_origen || s.vuelo_destino)) {
         const esc = textoEscalas(s.vuelo_escalas);
-        const base = `Vuelo ${esc} ${s.vuelo_origen || "origen"} – ${s.vuelo_destino || "destino"}`;
+        const base = `Vuelo ${esc} ${s.vuelo_origen || "origen"} – ${
+          s.vuelo_destino || "destino"
+        }`;
         const clase = s.vuelo_clase ? `, clase ${s.vuelo_clase}` : "";
         const equipaje = s.vuelo_equipaje ? `, equipaje ${s.vuelo_equipaje}` : "";
         return `${base}${clase}${equipaje}`;
@@ -671,22 +719,23 @@ router.get("/servicios", async (_req, res) => {
       return s.nombre_wtravel || `Servicio #${s.id}`;
     }
 
-    const rowsFinal = rows.map(r => ({
+    const rowsFinal = rows.map((r) => ({
       ...r,
-      servicio_texto: buildServicioTexto(r)
+      servicio_texto: buildServicioTexto(r),
     }));
 
     return res.json(rowsFinal);
-
   } catch (e) {
     console.error("GET /servicios", e);
     return res.status(500).json({
       ok: false,
       mensaje: "Error listando servicios",
-      error: e.message
+      error: e.message,
     });
   } finally {
-    try { if (conn) conn.release(); } catch {}
+    try {
+      if (conn) conn.release();
+    } catch {}
   }
 });
 
@@ -751,7 +800,7 @@ router.get("/servicios/:id", async (req, res) => {
       `,
       [id]
     );
-    const horas = hrsRows.map(x => x.hora);
+    const horas = hrsRows.map((x) => x.hora);
 
     const [beRows] = await conn.execute(
       `
@@ -778,26 +827,26 @@ router.get("/servicios/:id", async (req, res) => {
     );
     const vuelo = vueloRows[0] || null;
 
-    const [trenRows] = await conn.execute(
-      `
+    const [trenRows] = await conn
+      .execute(
+        `
       SELECT origen, destino, escalas, clase, sillas_reservadas
       FROM tren
       WHERE id_servicio = ?
       `,
-      [id]
-    ).catch(() => [[]]);
+        [id]
+      )
+      .catch(() => [[]]);
     const tren = trenRows[0] || null;
 
-    const [trasRows] = await conn.execute(
-      `SELECT * FROM traslado WHERE id_servicio = ?`,
-      [id]
-    ).catch(() => [[]]);
+    const [trasRows] = await conn
+      .execute(`SELECT * FROM traslado WHERE id_servicio = ?`, [id])
+      .catch(() => [[]]);
     const traslado = trasRows[0] || null;
 
-    const [tourRows] = await conn.execute(
-      `SELECT * FROM tour WHERE id_servicio = ?`,
-      [id]
-    ).catch(() => [[]]);
+    const [tourRows] = await conn
+      .execute(`SELECT * FROM tour WHERE id_servicio = ?`, [id])
+      .catch(() => [[]]);
     const tour = tourRows[0] || null;
 
     return res.json({
@@ -822,15 +871,16 @@ router.get("/servicios/:id", async (req, res) => {
         vuelo,
         tren,
         traslado,
-        tour
-      }
+        tour,
+      },
     });
-
   } catch (e) {
     console.error("GET /servicios/:id", e);
     return res.status(500).json({ ok: false, mensaje: "Error obteniendo servicio", error: e.message });
   } finally {
-    try { if (conn) conn.release(); } catch {}
+    try {
+      if (conn) conn.release();
+    } catch {}
   }
 });
 
@@ -840,11 +890,8 @@ router.get("/servicios/:id", async (req, res) => {
 router.put("/servicio/:id", async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const {
-      id_tipo, id_proveedor, id_ciudad,
-      nombre_wtravel, tiempo_servicio,
-      privado, descripcion, link_reserva
-    } = req.body || {};
+    const { id_tipo, id_proveedor, id_ciudad, nombre_wtravel, tiempo_servicio, privado, descripcion, link_reserva } =
+      req.body || {};
 
     if (!id || !id_tipo || !id_proveedor || !id_ciudad || !nombre_wtravel) {
       return res.status(400).json({ ok: false, mensaje: "faltan campos obligatorios" });
@@ -869,7 +916,7 @@ router.put("/servicio/:id", async (req, res) => {
         priv,
         descripcion ? String(descripcion).trim() : null,
         link_reserva ? String(link_reserva).trim() : null,
-        id
+        id,
       ]
     );
 
@@ -898,20 +945,24 @@ router.put("/servicios/:id/horas", async (req, res) => {
 
     await conn.execute("DELETE FROM serviciohora WHERE id_servicio=?", [id_servicio]);
     for (const h of horas) {
-      await conn.execute(
-        "INSERT INTO serviciohora (id_servicio, hora) VALUES (?, ?)",
-        [id_servicio, toTime(h)]
-      );
+      await conn.execute("INSERT INTO serviciohora (id_servicio, hora) VALUES (?, ?)", [
+        id_servicio,
+        toTime(h),
+      ]);
     }
 
     await conn.commit();
     res.json({ ok: true, mensaje: "Horas actualizadas", count: horas.length });
   } catch (e) {
-    try { if (conn) await conn.rollback(); } catch {}
+    try {
+      if (conn) await conn.rollback();
+    } catch {}
     console.error("PUT /servicios/:id/horas", e);
     res.status(500).json({ ok: false, mensaje: "Error actualizando horas", error: e.message });
   } finally {
-    try { if (conn) conn.release(); } catch {}
+    try {
+      if (conn) conn.release();
+    } catch {}
   }
 });
 
@@ -941,10 +992,10 @@ router.delete("/servicios/:id/horas/:hora", async (req, res) => {
     const id_servicio = Number(req.params.id);
     const hora = toTime(req.params.hora);
 
-    const [r] = await pool.execute(
-      "DELETE FROM serviciohora WHERE id_servicio=? AND hora=?",
-      [id_servicio, hora]
-    );
+    const [r] = await pool.execute("DELETE FROM serviciohora WHERE id_servicio=? AND hora=?", [
+      id_servicio,
+      hora,
+    ]);
 
     if (!r.affectedRows) return res.status(404).json({ ok: false, mensaje: "No existía esa hora" });
     res.json({ ok: true, mensaje: "Hora eliminada" });

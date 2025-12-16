@@ -112,9 +112,9 @@
             <input type="text" id="nuevo-nombre-wtravel" />
           </label>
 
-          <label>Tiempo del servicio<br/>
-            <input type="text" id="nuevo-tiempo-servicio" placeholder="Ej: 8h, 1h, 7 noches..." />
-          </label>
+          <label>Tiempo del servicio</label>
+          <select id="nuevo-tiempo-servicio-select"></select>
+          <input id="nuevo-tiempo-servicio-txt" type="text" placeholder="¿Cuál?" style="display:none;">
 
           <label>Privado<br/>
             <select id="nuevo-privado">
@@ -182,9 +182,9 @@
           <section id="sec-boleto" style="display:none;">
             <h4>Detalle de boleto de entrada</h4>
             <div class="grid-2">
-              <label>Lugar<br/>
-                <input type="text" id="be-lugar" placeholder="Museo Louvre..." />
-              </label>
+              <label>Lugar</label>
+              <select id="be-lugar-select"></select>
+              <input id="be-lugar-txt" type="text" placeholder="¿Cuál?" style="display:none;">
 
               <label>Tipo de entrada<br/>
                 <select id="be-tipo-entrada"></select>
@@ -264,13 +264,13 @@
           <section id="sec-traslado" style="display:none;">
             <h4>Detalle de traslado</h4>
             <div class="grid-2">
-              <label>Origen<br/>
-                <input type="text" id="tr-origen-tx" placeholder="Aeropuerto, estación, hotel..." />
-              </label>
+              <label>Origen</label>
+              <select id="tr-origen-select"></select>
+              <input id="tr-origen-txt" type="text" placeholder="¿Cuál?" style="display:none;">
 
-              <label>Destino<br/>
-                <input type="text" id="tr-destino-tx" placeholder="Hotel, aeropuerto..." />
-              </label>
+              <label>Destino</label>
+              <select id="tr-destino-select"></select>
+              <input id="tr-destino-txt" type="text" placeholder="¿Cuál?" style="display:none;">
 
               <label>Tipo de traslado<br/>
                 <select id="tr-tipo"></select>
