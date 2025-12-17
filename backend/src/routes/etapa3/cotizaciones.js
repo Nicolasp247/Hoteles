@@ -28,6 +28,21 @@ function esTipoSinPrecio(nombreTipo) {
   return t.includes("vuelo") || t.includes("tren");
 }
 
+// Normaliza DBL/SGL/TPL
+function normalizarTipoHabitacion(v) {
+  const t = String(v || "").trim().toUpperCase();
+  if (!t) return "DBL";
+  if (t === "DBL" || t === "SGL" || t === "TPL") return t;
+  return "DBL";
+}
+
+// Si enum = OTRO, usa el texto alternativo
+function pickOtro(enumVal, otroVal) {
+  if (!enumVal) return null;
+  if (String(enumVal).toUpperCase() === "OTRO") return (String(otroVal || "").trim() || null);
+  return enumVal;
+}
+
 // Texto “Directo / X escala(s)”
 function textoEscalas(escalas) {
   const n = Number(escalas);
@@ -287,8 +302,6 @@ router.get("/cotizaciones/:id", async (req, res) => {
     }
     const cabecera = cabRows[0];
 
-    // 👇 OJO: acá devolvemos precio_usd ya guardado en el item.
-    // Para vuelo/tren devolvemos NULL como ya estabas haciendo.
     const [itemRowsRaw] = await db.execute(
       `
       SELECT
@@ -315,11 +328,11 @@ router.get("/cotizaciones/:id", async (req, res) => {
         s.descripcion           AS descripcion_servicio,
         ts.nombre               AS tipo_servicio,
         c.nombre                AS ciudad,
+
         a.noches          AS noches_alojamiento,
         a.categoria_hotel AS categoria_hotel,
         a.categoria_hab   AS categoria_hab,
         a.regimen         AS regimen_alojamiento,
-
 
         v.origen   AS vuelo_origen,
         v.destino  AS vuelo_destino,
@@ -370,7 +383,8 @@ router.get("/cotizaciones/:id", async (req, res) => {
 
 // =========================================================
 // POST /api/cotizaciones/:id/items
-// ✅ Plan A Alojamiento: autocalcular precio_usd = precio_noche_mes * noches
+// ✅ A2 recomendado: autocalcular precio_usd para ALOJAMIENTO:
+// precio_total = precio_noche_mes * noches * habitaciones
 // =========================================================
 router.post("/cotizaciones/:id/items", async (req, res) => {
   try {
@@ -389,7 +403,10 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
       clase_override,
       idioma_override,
       nota_linea,
-      precio_usd
+      precio_usd,
+
+      // opcional: si luego quieres elegir DBL/SGL/TPL desde el front
+      tipo_habitacion
     } = req.body || {};
 
     if (!id_servicio || !fecha_servicio) {
@@ -428,12 +445,21 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
       if (!Number.isNaN(n)) precioNormalizado = n;
     }
 
-    // 3) ✅ Si es alojamiento y NO llegó precio_usd, lo calculamos por tabla alojamiento_precio_mes
+    // 3) ✅ Si es alojamiento y NO llegó precio_usd, lo calculamos por alojamiento_precio_mes (A2)
     if (esTipoAlojamiento(tipoServicioNombre) && (precioNormalizado === null)) {
-      // a) datos del alojamiento
+
+      // a) datos del alojamiento (incluyendo OTRO)
       const [[aloj]] = await db.execute(
         `
-        SELECT noches, categoria_hotel, regimen
+        SELECT
+          noches,
+          habitaciones,
+          categoria_hotel,
+          categoria_hotel_otro,
+          categoria_hab,
+          categoria_hab_otro,
+          regimen,
+          regimen_otro
         FROM alojamiento
         WHERE id_servicio = ?
         `,
@@ -442,57 +468,48 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
 
       if (aloj) {
         const noches = Number(aloj.noches || 0);
-        const categoria = aloj.categoria_hotel || null;   // ✅ esta es la que debe cruzar con alojamiento_precio_mes.categoria
-        const regimen = aloj.regimen || null;
+        const habitaciones = Number(aloj.habitaciones || 1);
+
+        const categoriaHotel = pickOtro(aloj.categoria_hotel, aloj.categoria_hotel_otro);
+        const categoriaHab = pickOtro(aloj.categoria_hab, aloj.categoria_hab_otro);
+        const regimen = pickOtro(aloj.regimen, aloj.regimen_otro);
 
         // b) año/mes desde fecha_servicio (YYYY-MM-DD)
         const fs = String(fecha_servicio || "");
         const y = Number(fs.slice(0, 4));
         const m = Number(fs.slice(5, 7));
 
-        // c) por ahora fijo DBL (después lo conectamos a SGL/TPL)
-        const tipoHab = "DBL";
+        // c) tipo habitación (DBL default por ahora)
+        const tipoHab = normalizarTipoHabitacion(tipo_habitacion);
 
-        // DEBUG útil (lo puedes dejar o quitar luego)
-        console.log("[ALOJ PRECIO] lookup", {
-          id_servicio,
-          id_ciudad: srv.id_ciudad,
-          categoria,
-          regimen,
-          anio: y,
-          mes: m,
-          tipoHab,
-          noches,
-        });
-
-        if (noches > 0 && categoria && regimen && y && m) {
+        if (noches > 0 && habitaciones > 0 && categoriaHotel && categoriaHab && regimen && y && m) {
           const [[pm]] = await db.execute(
             `
             SELECT precio_usd
             FROM alojamiento_precio_mes
             WHERE id_ciudad = ?
               AND categoria = ?
+              AND categoria_hab = ?
               AND regimen = ?
               AND anio = ?
               AND mes = ?
               AND tipo_habitacion = ?
             LIMIT 1
             `,
-            [srv.id_ciudad, categoria, regimen, y, m, tipoHab]
+            [srv.id_ciudad, categoriaHotel, categoriaHab, regimen, y, m, tipoHab]
           );
-
-          console.log("[ALOJ PRECIO] resultado", pm);
 
           if (pm && pm.precio_usd != null) {
             const precioNoche = Number(pm.precio_usd);
             if (Number.isFinite(precioNoche)) {
-              precioNormalizado = precioNoche * noches;
+              const total = precioNoche * noches * habitaciones;
+              precioNormalizado = Math.round(total * 100) / 100;
             }
           }
+          // Si no encuentra precio, precioNormalizado queda null (pendiente de precio)
         }
       }
     }
-
 
     // 4) Orden del día (por fecha)
     const [maxRows] = await db.execute(
@@ -569,6 +586,7 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
         s.descripcion           AS descripcion_servicio,
         ts.nombre               AS tipo_servicio,
         c.nombre                AS ciudad,
+
         a.noches                AS noches_alojamiento,
         a.categoria_hotel       AS categoria_hotel,
         a.categoria_hab         AS categoria_hab,
@@ -706,4 +724,3 @@ router.delete("/cotizaciones/items/:id_item", async (req, res) => {
 });
 
 module.exports = router;
-

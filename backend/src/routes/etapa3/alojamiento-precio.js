@@ -14,6 +14,12 @@ function normalizarTipoHabitacion(v) {
   return "DBL";
 }
 
+function normStr(v) {
+  const s = String(v || "").trim();
+  return s ? s : null;
+}
+
+// Devuelve 12 meses fijo
 function build12MesesMap(rows) {
   const map = new Map(rows.map(r => [Number(r.mes), r.precio_usd]));
   const out = [];
@@ -21,13 +27,9 @@ function build12MesesMap(rows) {
   return out;
 }
 
-function normStr(v) {
-  const s = String(v || "").trim();
-  return s ? s : null;
-}
-
 /**
- * GET /api/alojamiento/precios?id_ciudad=1&categoria=H4_ECONOMICO&categoria_hab=ESTANDAR&regimen=ALOJAMIENTO_DESAYUNO&anio=2025&tipo_habitacion=DBL
+ * GET /api/alojamiento/precios
+ * ?id_ciudad=1&categoria=H4_ECONOMICO&categoria_hab=ESTANDAR&regimen=ALOJAMIENTO_DESAYUNO&anio=2025&tipo_habitacion=DBL
  */
 router.get("/alojamiento/precios", async (req, res) => {
   try {
@@ -41,7 +43,7 @@ router.get("/alojamiento/precios", async (req, res) => {
 
     if (!id_ciudad) return res.status(400).json({ ok: false, mensaje: "id_ciudad inválido" });
     if (!anio) return res.status(400).json({ ok: false, mensaje: "anio inválido" });
-    if (!categoria) return res.status(400).json({ ok: false, mensaje: "categoria requerida" });
+    if (!categoria) return res.status(400).json({ ok: false, mensaje: "categoria (hotel) requerida" });
     if (!regimen) return res.status(400).json({ ok: false, mensaje: "regimen requerido" });
 
     const [rows] = await db.execute(
@@ -76,7 +78,7 @@ router.get("/alojamiento/precios", async (req, res) => {
 });
 
 /**
- * PUT /api/alojamiento/precios?... (mismos query params)
+ * PUT /api/alojamiento/precios (batch 12 meses)
  * Body: { precios: [{mes:1, precio_usd:100}, ...] }
  */
 router.put("/alojamiento/precios", async (req, res) => {
@@ -92,7 +94,7 @@ router.put("/alojamiento/precios", async (req, res) => {
 
     if (!id_ciudad) return res.status(400).json({ ok: false, mensaje: "id_ciudad inválido" });
     if (!anio) return res.status(400).json({ ok: false, mensaje: "anio inválido" });
-    if (!categoria) return res.status(400).json({ ok: false, mensaje: "categoria requerida" });
+    if (!categoria) return res.status(400).json({ ok: false, mensaje: "categoria (hotel) requerida" });
     if (!regimen) return res.status(400).json({ ok: false, mensaje: "regimen requerido" });
 
     const precios = Array.isArray(req.body?.precios) ? req.body.precios : null;
@@ -101,14 +103,14 @@ router.put("/alojamiento/precios", async (req, res) => {
     const norm = precios
       .map(p => {
         const mes = toInt(p?.mes);
-        let precio = (p?.precio_usd === null || p?.precio_usd === "" || p?.precio_usd === undefined)
-          ? null
-          : (Number.isFinite(Number(p.precio_usd)) ? Number(p.precio_usd) : null);
+        let precio =
+          (p?.precio_usd === null || p?.precio_usd === "" || p?.precio_usd === undefined)
+            ? null
+            : (Number.isFinite(Number(p.precio_usd)) ? Number(p.precio_usd) : null);
 
-        // Validación: no negativos
+        // Validación: no negativos + redondeo 2 dec
         if (precio != null) {
           if (precio < 0) precio = null;
-          // Redondeo 2 decimales
           precio = Math.round(precio * 100) / 100;
         }
 

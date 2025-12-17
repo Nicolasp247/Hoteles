@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Precios Alojamiento</title>
+  <link rel="stylesheet" href="../css/estilos.css" />
+  <style>
+    .grid { display: grid; gap: 12px; }
+    .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; align-items: end; }
+    .row2 { display: grid; grid-template-columns: 1fr 1fr 1fr 160px 160px; gap: 10px; align-items: end; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ddd; padding: 8px; }
+    th { text-align: left; }
+    input[type="number"] { width: 140px; }
+    .muted { opacity: 0.8; font-size: 0.95em; }
+    .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .msg { margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <h1>Precios de Alojamiento</h1>
+    <p class="muted">Precio por noche (por habitación). Guardas por ciudad + cat hotel + cat hab + régimen + año + mes + tipo hab.</p>
+
+    <section class="grid">
+
+      <div class="row">
+        <div><label>Continente</label><select id="filtro-continente"></select></div>
+        <div><label>País</label><select id="filtro-pais"></select></div>
+        <div><label>Ciudad</label><select id="filtro-ciudad"></select></div>
+      </div>
+
+      <div class="row2">
+        <div>
+          <label>Categoría hotel</label>
+          <select id="sel-cat-hotel"></select>
+        </div>
+        <div>
+          <label>Categoría habitación</label>
+          <select id="sel-cat-hab"></select>
+        </div>
+        <div>
+          <label>Régimen</label>
+          <select id="sel-regimen"></select>
+        </div>
+        <div>
+          <label>Año</label>
+          <input id="inp-anio" type="number" min="2000" max="2100" />
+        </div>
+        <div>
+          <label>Tipo hab</label>
+          <select id="sel-tipo-hab">
+            <option value="DBL">DBL</option>
+            <option value="SGL">SGL</option>
+            <option value="TPL">TPL</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="btn-cargar" type="button">Cargar</button>
+        <button id="btn-guardar" type="button">Guardar</button>
+        <span id="msg" class="msg"></span>
+      </div>
+
+      <table>
+        <thead>
+          <tr><th>Mes</th><th>Precio USD</th></tr>
+        </thead>
+        <tbody id="tbody-precios"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script src="./precios-alojamiento.js"></script>
+</body>
+</html>
