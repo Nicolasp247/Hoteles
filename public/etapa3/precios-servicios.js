@@ -40,6 +40,19 @@ document.addEventListener("DOMContentLoaded", () => {
     msg.style.color = isError ? "crimson" : "inherit";
   }
 
+  function parseAnioSeguro() {
+    const raw = String(inpAnio?.value || "").trim();
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return null;
+    const anio = Math.trunc(n);
+    if (anio < 2000 || anio > 2100) return null;
+    return anio;
+  }
+
+  function round2(n) {
+    return Math.round((n + Number.EPSILON) * 100) / 100;
+  }
+
   async function fetchLista(url, posiblesKeys = []) {
     const resp = await fetch(url);
     const text = await resp.text();
@@ -61,8 +74,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function renderTabla(precios12) {
     tbody.innerHTML = "";
+
+    // Normalizar a map mes -> precio_usd
+    const map = new Map();
+    (precios12 || []).forEach(x => {
+      const mes = Number(x?.mes);
+      if (Number.isFinite(mes) && mes >= 1 && mes <= 12) map.set(mes, x?.precio_usd);
+    });
+
     for (let m = 1; m <= 12; m++) {
-      const row = (precios12 || []).find(x => Number(x.mes) === m);
       const tr = document.createElement("tr");
 
       const tdMes = document.createElement("td");
@@ -74,9 +94,11 @@ document.addEventListener("DOMContentLoaded", () => {
       input.step = "0.01";
       input.min = "0";
       input.dataset.mes = String(m);
-      input.value = (row?.precio_usd === null || row?.precio_usd === undefined) ? "" : String(row.precio_usd);
-      tdPrecio.appendChild(input);
 
+      const val = map.has(m) ? map.get(m) : null;
+      input.value = (val === null || val === undefined) ? "" : String(val);
+
+      tdPrecio.appendChild(input);
       tr.appendChild(tdMes);
       tr.appendChild(tdPrecio);
       tbody.appendChild(tr);
@@ -131,7 +153,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // =========================
   async function cargarServicios() {
     const lista = await fetchLista("/api/servicios", ["servicios"]);
-    // sacar alojamiento de esta pantalla
+    // Sacar alojamiento de esta pantalla
     allServicios = lista.filter(s => !String(s.tipo || "").toLowerCase().includes("aloj"));
     filtrarServicios();
   }
@@ -150,7 +172,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return true;
     });
 
-    // orden más legible
+    // Orden más legible
     serviciosFiltrados.sort((a, b) => {
       const aa = (a.servicio_texto || a.nombre_wtravel || "").toLowerCase();
       const bb = (b.servicio_texto || b.nombre_wtravel || "").toLowerCase();
@@ -161,14 +183,13 @@ document.addEventListener("DOMContentLoaded", () => {
     selServicio.appendChild(new Option("(Seleccionar servicio)", ""));
 
     serviciosFiltrados.forEach(s => {
-    const ciudad = (s.ciudad || "").trim();
-    const txtBase = s.servicio_texto || s.nombre_wtravel || `Servicio #${s.id}`;
-    const txt = ciudad ? `[${ciudad}] ${txtBase}` : txtBase;
-    selServicio.appendChild(new Option(txt, String(s.id)));
+      const ciudad = (s.ciudad || "").trim();
+      const txtBase = s.servicio_texto || s.nombre_wtravel || `Servicio #${s.id}`;
+      const txt = ciudad ? `[${ciudad}] ${txtBase}` : txtBase;
+      selServicio.appendChild(new Option(txt, String(s.id)));
     });
 
-
-    // reset detalle
+    // Reset detalle / edición
     detalleActual = null;
     renderDetalle(null);
     show(btnEditar, false);
@@ -201,6 +222,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const a = document.createElement("div");
       a.className = "muted";
       a.textContent = k;
+
       const b = document.createElement("div");
       if (k === "Link" && det.link_reserva) {
         const link = document.createElement("a");
@@ -235,7 +257,6 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    // tu endpoint devuelve { ok:true, servicio:{...} }
     detalleActual = data.servicio;
     renderDetalle(detalleActual);
 
@@ -254,7 +275,6 @@ document.addEventListener("DOMContentLoaded", () => {
     edLink.value = detalleActual.link_reserva || "";
     edDesc.value = detalleActual.descripcion || "";
 
-    // proveedor select
     if (detalleActual.id_proveedor != null) {
       edProveedor.value = String(detalleActual.id_proveedor);
     }
@@ -280,7 +300,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const id = detalleActual.id;
     const payload = {
-      // REQUIRED por tu PUT /api/servicio/:id
       id_tipo: detalleActual.id_tipo,
       id_proveedor: Number(edProveedor.value),
       id_ciudad: detalleActual.id_ciudad,
@@ -307,7 +326,7 @@ document.addEventListener("DOMContentLoaded", () => {
     setMsg("Servicio actualizado ✅");
     cerrarEdicion();
 
-    // recargar detalle y lista para que el texto del select quede actualizado
+    // Recargar lista y detalle para refrescar el texto del select
     await cargarServicios();
     selServicio.value = String(id);
     await cargarDetalleServicio(id);
@@ -318,48 +337,75 @@ document.addEventListener("DOMContentLoaded", () => {
   // =========================
   async function cargarPrecios() {
     setMsg("");
+
     const id = selServicio.value;
-    const anio = inpAnio.value;
+    const anio = parseAnioSeguro();
     const tipoHab = selTipoHab.value;
 
     if (!id) return setMsg("Selecciona un servicio.", true);
-    if (!anio) return setMsg("Selecciona un año.", true);
+    if (!anio) return setMsg("Año inválido. Usa un año entre 2000 y 2100.", true);
 
-    const resp = await fetch(`/api/servicios/${id}/precios?anio=${encodeURIComponent(anio)}&tipo_habitacion=${encodeURIComponent(tipoHab)}`);
+    const resp = await fetch(
+      `/api/servicios/${id}/precios?anio=${encodeURIComponent(anio)}&tipo_habitacion=${encodeURIComponent(tipoHab)}`
+    );
     const data = await resp.json().catch(() => ({}));
 
     if (!resp.ok || !data.ok) return setMsg(data.mensaje || data.error || "Error cargando precios", true);
 
     renderTabla(data.precios || []);
-    setMsg("Precios cargados.");
+    setMsg("Precios cargados ✅");
   }
 
   async function guardarPrecios() {
     setMsg("");
+
     const id = selServicio.value;
-    const anio = inpAnio.value;
+    const anio = parseAnioSeguro();
     const tipoHab = selTipoHab.value;
 
     if (!id) return setMsg("Selecciona un servicio.", true);
-    if (!anio) return setMsg("Selecciona un año.", true);
+    if (!anio) return setMsg("Año inválido. Usa un año entre 2000 y 2100.", true);
 
     const inputs = tbody.querySelectorAll("input[type='number']");
-    const precios = Array.from(inputs).map(inp => {
+    const precios = [];
+
+    for (const inp of inputs) {
       const mes = Number(inp.dataset.mes);
       const raw = String(inp.value || "").trim();
-      return { mes, precio_usd: raw === "" ? null : Number(raw) };
-    });
 
-    const resp = await fetch(`/api/servicios/${id}/precios?anio=${encodeURIComponent(anio)}&tipo_habitacion=${encodeURIComponent(tipoHab)}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ precios })
-    });
+      if (!raw) {
+        precios.push({ mes, precio_usd: null });
+        continue;
+      }
+
+      const n = Number(raw);
+
+      if (!Number.isFinite(n)) {
+        return setMsg(`Precio inválido en mes ${mes} (${MESES[mes - 1]}).`, true);
+      }
+      if (n < 0) {
+        return setMsg(`No se permiten precios negativos (mes ${mes}: ${MESES[mes - 1]}).`, true);
+      }
+
+      precios.push({ mes, precio_usd: round2(n) });
+    }
+
+    const resp = await fetch(
+      `/api/servicios/${id}/precios?anio=${encodeURIComponent(anio)}&tipo_habitacion=${encodeURIComponent(tipoHab)}`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ precios })
+      }
+    );
 
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok || !data.ok) return setMsg(data.mensaje || data.error || "Error guardando precios", true);
 
     setMsg("Guardado listo ✅");
+
+    // Opcional: recargar lo guardado para ver exactamente lo que quedó en BD
+    await cargarPrecios();
   }
 
   // =========================
@@ -410,7 +456,7 @@ document.addEventListener("DOMContentLoaded", () => {
       await cargarServicios();
       await cargarProveedores();
 
-      // defaults para selects vacíos
+      // Defaults para selects vacíos
       addOptions(filtroPais, [], { firstText: "(Todos los países)", firstValue: "" });
       addOptions(filtroCiudad, [], { firstText: "(Todas las ciudades)", firstValue: "" });
 

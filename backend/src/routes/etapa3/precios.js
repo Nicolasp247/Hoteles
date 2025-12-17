@@ -21,12 +21,31 @@ function esAlojamientoPorNombreTipo(nombreTipo) {
 
 // Devuelve array de 12 meses: [{mes:1, precio_usd:...}, ...]
 function build12MesesMap(rows) {
-  const map = new Map(rows.map(r => [Number(r.mes), r.precio_usd]));
+  const map = new Map(rows.map((r) => [Number(r.mes), r.precio_usd]));
   const out = [];
   for (let m = 1; m <= 12; m++) {
     out.push({ mes: m, precio_usd: map.has(m) ? map.get(m) : null });
   }
   return out;
+}
+
+// Normaliza precio:
+// - null/""/undefined -> null
+// - número -> Number redondeado a 2 decimales
+// - si NaN -> null
+function normalizarPrecioUsd(v) {
+  if (v === null || v === undefined) return null;
+  const raw = String(v).trim();
+  if (raw === "") return null;
+
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return null;
+
+  // No permitir negativos (backend hard stop)
+  if (n < 0) return null;
+
+  // Redondear a 2 decimales de forma segura
+  return Math.round(n * 100) / 100;
 }
 
 /* =========================================================
@@ -43,7 +62,7 @@ router.get("/servicios/:id/precios", async (req, res) => {
 
     const tipo_habitacion = normalizarTipoHabitacion(req.query.tipo_habitacion);
 
-    // Validación: por ahora NO alojamientos en esta pantalla
+    // Validación: NO alojamientos en esta API/pantalla
     const [[srv]] = await db.execute(
       `
       SELECT ts.nombre AS tipo
@@ -59,7 +78,8 @@ router.get("/servicios/:id/precios", async (req, res) => {
     if (esAlojamientoPorNombreTipo(srv.tipo)) {
       return res.status(400).json({
         ok: false,
-        mensaje: "Este servicio es ALOJAMIENTO. Sus precios se gestionan en la tabla/pantalla de alojamiento."
+        mensaje:
+          "Este servicio es ALOJAMIENTO. Sus precios se gestionan en la tabla/pantalla de alojamiento.",
       });
     }
 
@@ -80,11 +100,13 @@ router.get("/servicios/:id/precios", async (req, res) => {
       id_servicio,
       anio,
       tipo_habitacion,
-      precios: build12MesesMap(rows)
+      precios: build12MesesMap(rows),
     });
   } catch (e) {
     console.error("GET /servicios/:id/precios", e);
-    return res.status(500).json({ ok: false, mensaje: "Error obteniendo precios", error: e.message });
+    return res
+      .status(500)
+      .json({ ok: false, mensaje: "Error obteniendo precios", error: e.message });
   }
 });
 
@@ -99,7 +121,7 @@ router.get("/servicios/:id/precios", async (req, res) => {
      ]
    }
    - Si precio_usd es null/"" -> guarda NULL
-   - Upsert por PK (id_servicio, anio, mes)
+   - Upsert por PK (id_servicio, anio, mes, tipo_habitacion)
 ========================================================= */
 router.put("/servicios/:id/precios", async (req, res) => {
   let conn;
@@ -114,10 +136,12 @@ router.put("/servicios/:id/precios", async (req, res) => {
 
     const precios = Array.isArray(req.body?.precios) ? req.body.precios : null;
     if (!precios) {
-      return res.status(400).json({ ok: false, mensaje: "Body inválido: se requiere precios[] (12 meses)" });
+      return res
+        .status(400)
+        .json({ ok: false, mensaje: "Body inválido: se requiere precios[] (12 meses)" });
     }
 
-    // Validación: por ahora NO alojamientos
+    // Validación: NO alojamientos en esta API/pantalla
     const [[srv]] = await db.execute(
       `
       SELECT ts.nombre AS tipo
@@ -133,30 +157,31 @@ router.put("/servicios/:id/precios", async (req, res) => {
     if (esAlojamientoPorNombreTipo(srv.tipo)) {
       return res.status(400).json({
         ok: false,
-        mensaje: "Este servicio es ALOJAMIENTO. Sus precios se gestionan en la tabla/pantalla de alojamiento."
+        mensaje:
+          "Este servicio es ALOJAMIENTO. Sus precios se gestionan en la tabla/pantalla de alojamiento.",
       });
     }
 
-    // Normalizar y filtrar meses válidos
+    // Normalizar meses y precios
     const norm = precios
-      .map(p => ({
+      .map((p) => ({
         mes: toInt(p?.mes),
-        precio_usd:
-          (p?.precio_usd === null || p?.precio_usd === "" || p?.precio_usd === undefined)
-            ? null
-            : (Number.isFinite(Number(p.precio_usd)) ? Number(p.precio_usd) : null)
+        precio_usd: normalizarPrecioUsd(p?.precio_usd),
       }))
-      .filter(p => p.mes && p.mes >= 1 && p.mes <= 12);
+      .filter((p) => p.mes && p.mes >= 1 && p.mes <= 12);
+
+    // Si alguien intentó mandar negativos (quedaron null), puedes elegir:
+    // - permitirlos como null (lo actual)
+    // - o rechazar con 400 si detectas alguno
+    // Aquí lo dejamos como "null" para no romper UX.
 
     conn = await db.getConnection();
     await conn.beginTransaction();
 
-    // Upsert por mes
     const sql = `
       INSERT INTO servicio_precio_mes (id_servicio, anio, mes, tipo_habitacion, precio_usd)
       VALUES (?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE
-        tipo_habitacion = VALUES(tipo_habitacion),
         precio_usd = VALUES(precio_usd)
     `;
 
@@ -172,14 +197,20 @@ router.put("/servicios/:id/precios", async (req, res) => {
       id_servicio,
       anio,
       tipo_habitacion,
-      count: norm.length
+      count: norm.length,
     });
   } catch (e) {
-    try { if (conn) await conn.rollback(); } catch {}
+    try {
+      if (conn) await conn.rollback();
+    } catch {}
     console.error("PUT /servicios/:id/precios", e);
-    return res.status(500).json({ ok: false, mensaje: "Error guardando precios", error: e.message });
+    return res
+      .status(500)
+      .json({ ok: false, mensaje: "Error guardando precios", error: e.message });
   } finally {
-    try { if (conn) conn.release(); } catch {}
+    try {
+      if (conn) conn.release();
+    } catch {}
   }
 });
 

@@ -91,6 +91,58 @@ function toGrupoTexto(privado) {
   return privado ? "privado" : "en grupo";
 }
 
+// ===== Pretty helpers (texto lindo) =====
+function capSentence(s) {
+  s = String(s || "").trim().toLowerCase();
+  if (!s) return "";
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function prettyCategoriaHotel(code) {
+  const c = String(code || "").toUpperCase();
+  const map = {
+    H3_ECONOMICO: "hotel 3 estrellas económico",
+    H3_SUPERIOR: "hotel 3 estrellas superior",
+    H4_ECONOMICO: "hotel 4 estrellas económico",
+    H4_SUPERIOR: "hotel 4 estrellas superior",
+    H5_ECONOMICO: "hotel 5 estrellas económico",
+    H5_SUPERIOR: "hotel 5 estrellas superior",
+    LUJO_ECONOMICO: "hotel lujo económico",
+    LUJO_SUPERIOR: "hotel lujo superior",
+  };
+  return map[c] || capSentence(c.replaceAll("_", " "));
+}
+
+function prettyCategoriaHab(code) {
+  const c = String(code || "").toUpperCase();
+  const map = {
+    ESTANDAR: "habitación estándar",
+    STANDARD: "habitación estándar",
+    SUPERIOR: "habitación superior",
+    SUITE: "habitación suite",
+  };
+  // si viene algo raro, lo intenta “humanizar”
+  return map[c] || ("habitación " + capSentence(c.replaceAll("_", " ")));
+}
+
+function prettyRegimen(code) {
+  const c = String(code || "").toUpperCase();
+  const map = {
+    ALOJAMIENTO_DESAYUNO: "desayuno diario",
+    SOLO_ALOJAMIENTO: "solo alojamiento",
+    MEDIA_PENSION: "media pensión",
+    PENSION_COMPLETA: "pensión completa",
+    TODO_INCLUIDO: "todo incluido",
+  };
+  return map[c] || capSentence(c.replaceAll("_", " "));
+}
+
+function nochesTxt(n) {
+  const x = Number(n || 0);
+  if (!Number.isFinite(x) || x <= 0) return "";
+  return x === 1 ? "1 noche" : `${x} noches`;
+}
+
 /* =========================================================
    GET /api/proveedores
 ========================================================= */
@@ -564,6 +616,7 @@ router.post("/servicios/:id/horas", async (req, res) => {
 
 /* =========================================================
    GET /api/servicios
+   ✅ ahora incluye categoria_hotel + servicio_texto lindo
 ========================================================= */
 router.get("/servicios", async (_req, res) => {
   let conn;
@@ -586,10 +639,12 @@ router.get("/servicios", async (_req, res) => {
         pa.id     AS id_pais,
         ct.id     AS id_continente,
 
-        -- alojamiento (formato nuevo)
+        -- alojamiento (✅ agregar categoria_hotel)
         a.noches             AS aloj_noches,
         a.regimen            AS aloj_regimen,
         a.regimen_otro       AS aloj_regimen_otro,
+        a.categoria_hotel    AS aloj_categoria_hotel,
+        a.categoria_hotel_otro AS aloj_categoria_hotel_otro,
         a.categoria_hab      AS aloj_categoria_hab,
         a.categoria_hab_otro AS aloj_categoria_hab_otro,
 
@@ -641,18 +696,22 @@ router.get("/servicios", async (_req, res) => {
     function buildServicioTexto(s) {
       const tipo = (s.tipo || "").toLowerCase();
 
-      // ALOJAMIENTO: "<noches>, <categoria_hab>, <regimen>"
+      // ✅ ALOJAMIENTO: "3 noches, hotel 4 estrellas económico, habitación estándar, desayuno diario"
       if (tipo.includes("aloj")) {
         const noches = s.aloj_noches;
+
+        const catHotel = pickOtro(s.aloj_categoria_hotel, s.aloj_categoria_hotel_otro);
         const catHab = pickOtro(s.aloj_categoria_hab, s.aloj_categoria_hab_otro);
         const regimen = pickOtro(s.aloj_regimen, s.aloj_regimen_otro);
 
-        if (noches != null || catHab || regimen) {
-          const nTxt = Number(noches) === 1 ? "1 noche" : `${Number(noches || 0)} noches`;
-          const habTxt = catHab ? `habitación ${catHab}` : "habitación";
-          const regTxt = regimen ? regimen : "";
-          return `${nTxt}, ${habTxt}${regTxt ? `, ${regTxt}` : ""}`;
-        }
+        const partes = [
+          nochesTxt(noches),
+          catHotel ? prettyCategoriaHotel(catHotel) : null,
+          catHab ? prettyCategoriaHab(catHab) : null,
+          regimen ? prettyRegimen(regimen) : null,
+        ].filter(Boolean);
+
+        if (partes.length) return partes.join(", ");
       }
 
       // TRASLADO: "Traslado <privado/compartido> <origen> – <destino>"
@@ -724,7 +783,8 @@ router.get("/servicios", async (_req, res) => {
       servicio_texto: buildServicioTexto(r),
     }));
 
-    return res.json(rowsFinal);
+    // ✅ devolver consistente
+    return res.json({ ok: true, servicios: rowsFinal });
   } catch (e) {
     console.error("GET /servicios", e);
     return res.status(500).json({
@@ -1002,6 +1062,130 @@ router.delete("/servicios/:id/horas/:hora", async (req, res) => {
   } catch (e) {
     console.error("DELETE /servicios/:id/horas/:hora", e);
     res.status(500).json({ ok: false, mensaje: "Error eliminando hora", error: e.message });
+  }
+});
+
+/* =========================================================
+   GET /api/servicios/:id/precios?anio=YYYY&tipo_habitacion=DBL
+   Devuelve lista de meses con precio (solo los que existan)
+========================================================= */
+router.get("/servicios/:id/precios", async (req, res) => {
+  let conn;
+  try {
+    const id_servicio = Number(req.params.id);
+    const anio = Number(req.query.anio);
+    const tipo_habitacion = String(req.query.tipo_habitacion || "DBL").trim().toUpperCase();
+
+    if (!id_servicio) return res.status(400).json({ ok: false, mensaje: "id_servicio inválido" });
+    if (!Number.isFinite(anio) || anio < 2000 || anio > 2100) {
+      return res.status(400).json({ ok: false, mensaje: "anio inválido" });
+    }
+    if (!["DBL", "SGL", "TPL"].includes(tipo_habitacion)) {
+      return res.status(400).json({ ok: false, mensaje: "tipo_habitacion inválido (DBL/SGL/TPL)" });
+    }
+
+    conn = await pool.getConnection();
+    const [rows] = await conn.execute(
+      `
+      SELECT mes, precio_usd
+      FROM servicio_precio_mes
+      WHERE id_servicio = ?
+        AND anio = ?
+        AND tipo_habitacion = ?
+      ORDER BY mes ASC
+      `,
+      [id_servicio, anio, tipo_habitacion]
+    );
+
+    return res.json({ ok: true, precios: rows });
+  } catch (e) {
+    console.error("GET /servicios/:id/precios", e);
+    return res.status(500).json({ ok: false, mensaje: "Error cargando precios", error: e.message });
+  } finally {
+    try { if (conn) conn.release(); } catch {}
+  }
+});
+
+/* =========================================================
+   PUT /api/servicios/:id/precios?anio=YYYY&tipo_habitacion=DBL
+   Body: { precios: [ {mes:1..12, precio_usd:number|null}, ... ] }
+   Batch upsert (12 meses de una, sin 12 requests)
+========================================================= */
+router.put("/servicios/:id/precios", async (req, res) => {
+  let conn;
+  try {
+    const id_servicio = Number(req.params.id);
+    const anio = Number(req.query.anio);
+    const tipo_habitacion = String(req.query.tipo_habitacion || "DBL").trim().toUpperCase();
+    const precios = Array.isArray(req.body?.precios) ? req.body.precios : [];
+
+    if (!id_servicio) return res.status(400).json({ ok: false, mensaje: "id_servicio inválido" });
+    if (!Number.isFinite(anio) || anio < 2000 || anio > 2100) {
+      return res.status(400).json({ ok: false, mensaje: "anio inválido" });
+    }
+    if (!["DBL", "SGL", "TPL"].includes(tipo_habitacion)) {
+      return res.status(400).json({ ok: false, mensaje: "tipo_habitacion inválido (DBL/SGL/TPL)" });
+    }
+    if (precios.length === 0) {
+      return res.status(400).json({ ok: false, mensaje: "Body requiere precios[]" });
+    }
+
+    // Normaliza por mes (por si llega repetido)
+    const byMes = new Map();
+    for (const p of precios) {
+      const mes = Number(p?.mes);
+      if (!Number.isInteger(mes) || mes < 1 || mes > 12) {
+        return res.status(400).json({ ok: false, mensaje: `Mes inválido: ${p?.mes}` });
+      }
+
+      const raw = p?.precio_usd;
+
+      let precio = null;
+      if (raw !== null && raw !== undefined && String(raw).trim() !== "") {
+        const num = Number(raw);
+        if (!Number.isFinite(num)) {
+          return res.status(400).json({ ok: false, mensaje: `precio_usd inválido en mes ${mes}` });
+        }
+        if (num < 0) {
+          return res.status(400).json({ ok: false, mensaje: `No se permiten negativos (mes ${mes})` });
+        }
+        // redondeo a 2 decimales para que quede perfecto con DECIMAL(10,2)
+        precio = Math.round(num * 100) / 100;
+      }
+
+      byMes.set(mes, precio);
+    }
+
+    const values = Array.from(byMes.entries()).map(([mes, precio_usd]) => ([
+      id_servicio,
+      anio,
+      mes,
+      tipo_habitacion,
+      precio_usd
+    ]));
+
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+
+    // Upsert en batch
+    await conn.query(
+      `
+      INSERT INTO servicio_precio_mes (id_servicio, anio, mes, tipo_habitacion, precio_usd)
+      VALUES ?
+      ON DUPLICATE KEY UPDATE
+        precio_usd = VALUES(precio_usd)
+      `,
+      [values]
+    );
+
+    await conn.commit();
+    return res.json({ ok: true, mensaje: "Precios guardados", count: values.length });
+  } catch (e) {
+    try { if (conn) await conn.rollback(); } catch {}
+    console.error("PUT /servicios/:id/precios", e);
+    return res.status(500).json({ ok: false, mensaje: "Error guardando precios", error: e.message });
+  } finally {
+    try { if (conn) conn.release(); } catch {}
   }
 });
 

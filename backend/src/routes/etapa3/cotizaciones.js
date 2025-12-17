@@ -57,6 +57,53 @@ function buildTextoTren(row) {
   return `${base}${clase}${sillas}`;
 }
 
+function capSentence(s) {
+  s = String(s || "").trim().toLowerCase();
+  if (!s) return "";
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function prettyCategoriaHotel(code) {
+  const c = String(code || "").toUpperCase();
+  const map = {
+    H3_ECONOMICO: "hotel 3 estrellas económico",
+    H3_SUPERIOR: "hotel 3 estrellas superior",
+    H4_ECONOMICO: "hotel 4 estrellas económico",
+    H4_SUPERIOR: "hotel 4 estrellas superior",
+    H5_ECONOMICO: "hotel 5 estrellas económico",
+    H5_SUPERIOR: "hotel 5 estrellas superior",
+  };
+  return map[c] || capSentence(c.replaceAll("_", " "));
+}
+
+function prettyCategoriaHab(code) {
+  const c = String(code || "").toUpperCase();
+  const map = {
+    ESTANDAR: "habitación estándar",
+    STANDARD: "habitación estándar",
+    SUITE: "habitación suite",
+  };
+  return map[c] || ("habitación " + capSentence(c.replaceAll("_", " ")));
+}
+
+function prettyRegimen(code) {
+  const c = String(code || "").toUpperCase();
+  const map = {
+    ALOJAMIENTO_DESAYUNO: "desayuno diario",
+    SOLO_ALOJAMIENTO: "solo alojamiento",
+    MEDIA_PENSION: "media pensión",
+    PENSION_COMPLETA: "pensión completa",
+    TODO_INCLUIDO: "todo incluido",
+  };
+  return map[c] || capSentence(c.replaceAll("_", " "));
+}
+
+function nochesTxt(n) {
+  const x = Number(n || 0);
+  if (!Number.isFinite(x) || x <= 0) return "";
+  return x === 1 ? "1 noche" : `${x} noches`;
+}
+
 // Construye servicio_texto final (con prefijos + subtipos)
 function buildServicioTexto(row) {
   const tipo = row.tipo_servicio || "";
@@ -64,16 +111,24 @@ function buildServicioTexto(row) {
   const textoVuelo = buildTextoVuelo(row);
   const textoTren = buildTextoTren(row);
 
+  // ALOJAMIENTO: formateo especial
+  if (esTipoAlojamiento(tipo)) {
+    const partes = [
+      nochesTxt(row.noches_alojamiento),
+      prettyCategoriaHotel(row.categoria_hotel),
+      prettyCategoriaHab(row.categoria_hab),
+      prettyRegimen(row.regimen_alojamiento),
+    ].filter(Boolean);
+
+    let base = partes.join(", ");
+    if (row.es_opcional) base = `Opcional: ${base}`;
+    return base;
+  }
+
+  // Otros tipos
   let base = row.titulo_override || textoVuelo || textoTren || row.nombre_servicio || "";
 
-  if (esTipoAlojamiento(tipo)) {
-    base = `Alojamiento: ${base}`;
-  }
-
-  if (row.es_opcional) {
-    base = `Opcional: ${base}`;
-  }
-
+  if (row.es_opcional) base = `Opcional: ${base}`;
   return base;
 }
 
@@ -260,7 +315,11 @@ router.get("/cotizaciones/:id", async (req, res) => {
         s.descripcion           AS descripcion_servicio,
         ts.nombre               AS tipo_servicio,
         c.nombre                AS ciudad,
-        a.noches                AS noches_alojamiento,
+        a.noches          AS noches_alojamiento,
+        a.categoria_hotel AS categoria_hotel,
+        a.categoria_hab   AS categoria_hab,
+        a.regimen         AS regimen_alojamiento,
+
 
         v.origen   AS vuelo_origen,
         v.destino  AS vuelo_destino,
@@ -511,6 +570,9 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
         ts.nombre               AS tipo_servicio,
         c.nombre                AS ciudad,
         a.noches                AS noches_alojamiento,
+        a.categoria_hotel       AS categoria_hotel,
+        a.categoria_hab         AS categoria_hab,
+        a.regimen               AS regimen_alojamiento,
 
         v.origen   AS vuelo_origen,
         v.destino  AS vuelo_destino,

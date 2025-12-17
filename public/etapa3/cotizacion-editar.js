@@ -472,12 +472,81 @@ document.addEventListener("DOMContentLoaded", () => {
     rellenarSelectServicios();
   }
 
+  function capSentence(s) {
+    s = String(s || "").trim().toLowerCase();
+    if (!s) return "";
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+
+  function prettyCategoriaHotel(code) {
+    const c = String(code || "").toUpperCase();
+    const map = {
+      H3_ECONOMICO: "hotel 3 estrellas económico",
+      H3_SUPERIOR: "hotel 3 estrellas superior",
+      H4_ECONOMICO: "hotel 4 estrellas económico",
+      H4_SUPERIOR: "hotel 4 estrellas superior",
+      H5_ECONOMICO: "hotel 5 estrellas económico",
+      H5_SUPERIOR: "hotel 5 estrellas superior",
+    };
+    return map[c] || capSentence(c.replaceAll("_", " "));
+  }
+
+  function prettyCategoriaHab(code) {
+    const c = String(code || "").toUpperCase();
+    const map = {
+      ESTANDAR: "habitación estándar",
+      STANDARD: "habitación estándar",
+      SUITE: "habitación suite",
+      SUPERIOR: "habitación superior",
+    };
+    return map[c] || ("habitación " + capSentence(c.replaceAll("_", " ")));
+  }
+
+  function prettyRegimen(code) {
+    const c = String(code || "").toUpperCase();
+    const map = {
+      ALOJAMIENTO_DESAYUNO: "desayuno diario",
+      SOLO_ALOJAMIENTO: "solo alojamiento",
+      MEDIA_PENSION: "media pensión",
+      PENSION_COMPLETA: "pensión completa",
+      TODO_INCLUIDO: "todo incluido",
+    };
+    return map[c] || capSentence(c.replaceAll("_", " "));
+  }
+
+  function nochesTxt(n) {
+    const x = Number(n || 0);
+    if (!Number.isFinite(x) || x <= 0) return "";
+    return x === 1 ? "1 noche" : `${x} noches`;
+  }
+
+  function labelServicio(s) {
+    const tipo = String(s.tipo_servicio || s.tipo || s.nombre_tipo || "").toLowerCase();
+
+    // Si es alojamiento, intentamos armar el texto bonito con campos de alojamiento
+    if (tipo.includes("aloj")) {
+      const partes = [
+        nochesTxt(s.noches),
+        prettyCategoriaHotel(s.categoria_hotel),
+        prettyCategoriaHab(s.categoria_hab),
+        prettyRegimen(s.regimen),
+      ].filter(Boolean);
+
+      // Si logramos armar algo con info real, lo usamos
+      if (partes.length >= 2) return partes.join(", ");
+    }
+
+    // Fallback
+    return s.servicio_texto || s.nombre_wtravel || `Servicio #${s.id}`;
+  }
+
   function rellenarSelectServicios() {
     if (!selectServicio) return;
     selectServicio.innerHTML = "";
     selectServicio.appendChild(new Option("(Seleccionar servicio)", ""));
+
     servicios.forEach((s) => {
-      const texto = s.servicio_texto || s.nombre_wtravel || `Servicio #${s.id}`;
+      const texto = labelServicio(s);
       selectServicio.appendChild(new Option(texto, s.id));
     });
   }

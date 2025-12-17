@@ -88,8 +88,7 @@ app.use('/api', require('./src/routes/catalogos'));
 
 // --- Rutas Etapa 3 (Cotizaciones) ---
 app.use('/api', require('./src/routes/etapa3/cotizaciones'));
-
-// --- Rutas Etapa 3 (Precios) ---
+app.use("/api", require("./src/routes/etapa3/alojamiento-precio"));
 app.use("/api", require("./src/routes/etapa3/precios"));
 
 // 404 solo para rutas de API
