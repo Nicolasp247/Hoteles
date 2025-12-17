@@ -1,7 +1,7 @@
 // backend/src/routes/etapa3/cotizaciones.js
 const express = require("express");
 const router = express.Router();
-const db = require("../../db"); // mysql2/promise pool
+const db = require("../../db"); // pool mysql2/promise
 
 // =======================
 // Helpers
@@ -28,6 +28,7 @@ function esTipoSinPrecio(nombreTipo) {
   return t.includes("vuelo") || t.includes("tren");
 }
 
+// Texto “Directo / X escala(s)”
 function textoEscalas(escalas) {
   const n = Number(escalas);
   if (!Number.isFinite(n) || n <= 0) return "directo";
@@ -52,9 +53,11 @@ function buildTextoTren(row) {
   if (row.tren_sillas_reservadas != null) {
     sillas = row.tren_sillas_reservadas ? `, asientos reservados` : `, sin asientos reservados`;
   }
+
   return `${base}${clase}${sillas}`;
 }
 
+// Construye servicio_texto final (con prefijos + subtipos)
 function buildServicioTexto(row) {
   const tipo = row.tipo_servicio || "";
 
@@ -63,8 +66,13 @@ function buildServicioTexto(row) {
 
   let base = row.titulo_override || textoVuelo || textoTren || row.nombre_servicio || "";
 
-  if (esTipoAlojamiento(tipo)) base = `Alojamiento: ${base}`;
-  if (row.es_opcional) base = `Opcional: ${base}`;
+  if (esTipoAlojamiento(tipo)) {
+    base = `Alojamiento: ${base}`;
+  }
+
+  if (row.es_opcional) {
+    base = `Opcional: ${base}`;
+  }
 
   return base;
 }
@@ -73,7 +81,6 @@ function buildServicioTexto(row) {
 // Rutas
 // =======================
 
-// Crear cotización
 router.post("/cotizaciones", async (req, res) => {
   try {
     const {
@@ -104,17 +111,36 @@ router.post("/cotizaciones", async (req, res) => {
     const infantes02 = intOrZero(infantes_0_2);
 
     const total_pasajeros = adultos65 + adultos1964 + jovenes1218 + ninos311 + infantes02;
+
     if (total_pasajeros <= 0) {
-      return res.status(400).json({ ok: false, mensaje: "Debe haber al menos 1 pasajero en la cotización." });
+      return res.status(400).json({
+        ok: false,
+        mensaje: "Debe haber al menos 1 pasajero en la cotización."
+      });
     }
 
-    const nombre_cotizacion = generarNombreCotizacion(fecha_viaje, agente, nombre_pasajero, total_pasajeros);
+    const nombre_cotizacion = generarNombreCotizacion(
+      fecha_viaje,
+      agente,
+      nombre_pasajero,
+      total_pasajeros
+    );
 
     const sql = `
       INSERT INTO cotizacion (
-        agente, nombre_pasajero,
-        adultos_65, adultos_19_64, jovenes_12_18, ninos_3_11, infantes_0_2,
-        total_pasajeros, categorias, fecha_viaje, nombre_cotizacion, moneda_id, nota
+        agente,
+        nombre_pasajero,
+        adultos_65,
+        adultos_19_64,
+        jovenes_12_18,
+        ninos_3_11,
+        infantes_0_2,
+        total_pasajeros,
+        categorias,
+        fecha_viaje,
+        nombre_cotizacion,
+        moneda_id,
+        nota
       )
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
@@ -164,7 +190,6 @@ router.post("/cotizaciones", async (req, res) => {
   }
 });
 
-// Listar cotizaciones
 router.get("/cotizaciones", async (_req, res) => {
   try {
     const [rows] = await db.execute(`
@@ -191,16 +216,24 @@ router.get("/cotizaciones", async (_req, res) => {
   }
 });
 
-// Obtener cotización + items
 router.get("/cotizaciones/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id, 10);
-    if (Number.isNaN(id)) return res.status(400).json({ ok: false, mensaje: "ID de cotización inválido." });
+    if (Number.isNaN(id)) {
+      return res.status(400).json({ ok: false, mensaje: "ID de cotización inválido." });
+    }
 
-    const [cabRows] = await db.execute("SELECT * FROM cotizacion WHERE id_cotizacion = ?", [id]);
-    if (cabRows.length === 0) return res.status(404).json({ ok: false, mensaje: "Cotización no encontrada." });
+    const [cabRows] = await db.execute(
+      "SELECT * FROM cotizacion WHERE id_cotizacion = ?",
+      [id]
+    );
+    if (cabRows.length === 0) {
+      return res.status(404).json({ ok: false, mensaje: "Cotización no encontrada." });
+    }
     const cabecera = cabRows[0];
 
+    // 👇 OJO: acá devolvemos precio_usd ya guardado en el item.
+    // Para vuelo/tren devolvemos NULL como ya estabas haciendo.
     const [itemRowsRaw] = await db.execute(
       `
       SELECT
@@ -254,9 +287,17 @@ router.get("/cotizaciones/:id", async (req, res) => {
       [id]
     );
 
-    const items = itemRowsRaw.map(row => ({ ...row, servicio_texto: buildServicioTexto(row) }));
+    const items = itemRowsRaw.map(row => ({
+      ...row,
+      servicio_texto: buildServicioTexto(row)
+    }));
 
-    return res.json({ ok: true, cotizacion: cabecera, cabecera, items });
+    return res.json({
+      ok: true,
+      cotizacion: cabecera,
+      cabecera,
+      items
+    });
 
   } catch (error) {
     console.error("Error al obtener cotización:", error);
@@ -268,11 +309,16 @@ router.get("/cotizaciones/:id", async (req, res) => {
   }
 });
 
-// Insertar item en cotización
+// =========================================================
+// POST /api/cotizaciones/:id/items
+// ✅ Plan A Alojamiento: autocalcular precio_usd = precio_noche_mes * noches
+// =========================================================
 router.post("/cotizaciones/:id/items", async (req, res) => {
   try {
     const idCotizacion = parseInt(req.params.id, 10);
-    if (Number.isNaN(idCotizacion)) return res.status(400).json({ ok: false, mensaje: "ID de cotización inválido." });
+    if (Number.isNaN(idCotizacion)) {
+      return res.status(400).json({ ok: false, mensaje: "ID de cotización inválido." });
+    }
 
     const {
       id_servicio,
@@ -296,12 +342,100 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
 
     const esOpcional = es_opcional ? 1 : 0;
 
+    // 1) Traer info del servicio + tipo + ciudad
+    const [[srv]] = await db.execute(
+      `
+      SELECT
+        s.id,
+        s.id_ciudad,
+        ts.nombre AS tipo_servicio
+      FROM servicio s
+      JOIN tiposervicio ts ON ts.id = s.id_tipo
+      WHERE s.id = ?
+      `,
+      [id_servicio]
+    );
+
+    if (!srv) {
+      return res.status(404).json({ ok: false, mensaje: "Servicio no encontrado." });
+    }
+
+    const tipoServicioNombre = srv.tipo_servicio || "";
+
+    // 2) Normalizar precio (si viene explícito lo respetamos)
     let precioNormalizado = null;
     if (precio_usd !== undefined && precio_usd !== null && precio_usd !== "") {
       const n = Number(precio_usd);
       if (!Number.isNaN(n)) precioNormalizado = n;
     }
 
+    // 3) ✅ Si es alojamiento y NO llegó precio_usd, lo calculamos por tabla alojamiento_precio_mes
+    if (esTipoAlojamiento(tipoServicioNombre) && (precioNormalizado === null)) {
+      // a) datos del alojamiento
+      const [[aloj]] = await db.execute(
+        `
+        SELECT noches, categoria_hotel, regimen
+        FROM alojamiento
+        WHERE id_servicio = ?
+        `,
+        [id_servicio]
+      );
+
+      if (aloj) {
+        const noches = Number(aloj.noches || 0);
+        const categoria = aloj.categoria_hotel || null;   // ✅ esta es la que debe cruzar con alojamiento_precio_mes.categoria
+        const regimen = aloj.regimen || null;
+
+        // b) año/mes desde fecha_servicio (YYYY-MM-DD)
+        const fs = String(fecha_servicio || "");
+        const y = Number(fs.slice(0, 4));
+        const m = Number(fs.slice(5, 7));
+
+        // c) por ahora fijo DBL (después lo conectamos a SGL/TPL)
+        const tipoHab = "DBL";
+
+        // DEBUG útil (lo puedes dejar o quitar luego)
+        console.log("[ALOJ PRECIO] lookup", {
+          id_servicio,
+          id_ciudad: srv.id_ciudad,
+          categoria,
+          regimen,
+          anio: y,
+          mes: m,
+          tipoHab,
+          noches,
+        });
+
+        if (noches > 0 && categoria && regimen && y && m) {
+          const [[pm]] = await db.execute(
+            `
+            SELECT precio_usd
+            FROM alojamiento_precio_mes
+            WHERE id_ciudad = ?
+              AND categoria = ?
+              AND regimen = ?
+              AND anio = ?
+              AND mes = ?
+              AND tipo_habitacion = ?
+            LIMIT 1
+            `,
+            [srv.id_ciudad, categoria, regimen, y, m, tipoHab]
+          );
+
+          console.log("[ALOJ PRECIO] resultado", pm);
+
+          if (pm && pm.precio_usd != null) {
+            const precioNoche = Number(pm.precio_usd);
+            if (Number.isFinite(precioNoche)) {
+              precioNormalizado = precioNoche * noches;
+            }
+          }
+        }
+      }
+    }
+
+
+    // 4) Orden del día (por fecha)
     const [maxRows] = await db.execute(
       `
       SELECT COALESCE(MAX(orden_dia), 0) AS maxOrden
@@ -312,13 +446,22 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
     );
     const siguienteOrden = (maxRows[0]?.maxOrden || 0) + 1;
 
+    // 5) Insert item
     const [result] = await db.execute(
       `
       INSERT INTO cotizacion_item (
-        id_cotizacion, id_servicio, fecha_servicio, orden_dia,
-        es_opcional, operador_mostrado, link_operador,
-        titulo_override, clase_override, idioma_override,
-        nota_linea, precio_usd
+        id_cotizacion,
+        id_servicio,
+        fecha_servicio,
+        orden_dia,
+        es_opcional,
+        operador_mostrado,
+        link_operador,
+        titulo_override,
+        clase_override,
+        idioma_override,
+        nota_linea,
+        precio_usd
       )
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
@@ -340,6 +483,7 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
 
     const idItem = result.insertId;
 
+    // 6) devolver item armado
     const [rows] = await db.execute(
       `
       SELECT
@@ -396,7 +540,10 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
 
     return res.status(201).json({
       ok: true,
-      item: { ...row, servicio_texto: buildServicioTexto(row) }
+      item: {
+        ...row,
+        servicio_texto: buildServicioTexto(row)
+      }
     });
 
   } catch (error) {
@@ -411,7 +558,6 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
 
 // =========================================================
 // PUT /api/cotizaciones/:id/items/orden
-// Plan A: guardar orden por id_item (sin tocar fecha_servicio)
 // =========================================================
 router.put("/cotizaciones/:id/items/orden", async (req, res) => {
   let conn;
@@ -419,11 +565,18 @@ router.put("/cotizaciones/:id/items/orden", async (req, res) => {
     const idCotizacion = Number(req.params.id);
     const orden = Array.isArray(req.body?.orden) ? req.body.orden : [];
 
-    if (!idCotizacion) return res.status(400).json({ ok: false, mensaje: "ID de cotización inválido." });
-    if (orden.length === 0) return res.status(400).json({ ok: false, mensaje: "Payload inválido: orden[] requerido." });
+    if (!idCotizacion) {
+      return res.status(400).json({ ok: false, mensaje: "ID de cotización inválido." });
+    }
+    if (orden.length === 0) {
+      return res.status(400).json({ ok: false, mensaje: "Payload inválido: orden[] requerido." });
+    }
 
     const rows = orden
-      .map(x => ({ id_item: Number(x.id_item), orden_dia: Number(x.orden_dia) }))
+      .map(x => ({
+        id_item: Number(x.id_item),
+        orden_dia: Number(x.orden_dia),
+      }))
       .filter(x => Number.isFinite(x.id_item) && x.id_item > 0 && Number.isFinite(x.orden_dia) && x.orden_dia > 0);
 
     if (rows.length === 0) {
@@ -453,26 +606,42 @@ router.put("/cotizaciones/:id/items/orden", async (req, res) => {
   } catch (error) {
     try { if (conn) await conn.rollback(); } catch {}
     console.error("PUT /cotizaciones/:id/items/orden", error);
-    return res.status(500).json({ ok: false, mensaje: "Error guardando el orden.", error: error.message });
+    return res.status(500).json({
+      ok: false,
+      mensaje: "Error guardando el orden.",
+      error: error.message
+    });
   } finally {
     try { if (conn) conn.release(); } catch {}
   }
 });
 
-// Eliminar item
 router.delete("/cotizaciones/items/:id_item", async (req, res) => {
   try {
     const idItem = Number(req.params.id_item);
-    if (!idItem) return res.status(400).json({ ok: false, mensaje: "id_item inválido" });
+    if (!idItem) {
+      return res.status(400).json({ ok: false, mensaje: "id_item inválido" });
+    }
 
-    const [result] = await db.execute("DELETE FROM cotizacion_item WHERE id_item = ?", [idItem]);
-    if (!result.affectedRows) return res.status(404).json({ ok: false, mensaje: "Item no encontrado" });
+    const [result] = await db.execute(
+      "DELETE FROM cotizacion_item WHERE id_item = ?",
+      [idItem]
+    );
+
+    if (!result.affectedRows) {
+      return res.status(404).json({ ok: false, mensaje: "Item no encontrado" });
+    }
 
     res.json({ ok: true, mensaje: "Item eliminado" });
   } catch (error) {
     console.error("DELETE /cotizaciones/items/:id_item", error);
-    res.status(500).json({ ok: false, mensaje: "Error interno al eliminar el item.", error: error.message });
+    res.status(500).json({
+      ok: false,
+      mensaje: "Error interno al eliminar el item.",
+      error: error.message
+    });
   }
 });
 
 module.exports = router;
+
