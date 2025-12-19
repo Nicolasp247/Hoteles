@@ -511,6 +511,58 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
       }
     }
 
+    // 3B) ✅ Si NO es alojamiento y NO llegó precio_usd, lo buscamos en servicio_precio_mes
+    //     (aplica para boleto/traslado/tour/etc; NO aplica para vuelo/tren)
+    if (!esTipoAlojamiento(tipoServicioNombre) && (precioNormalizado === null) && !esTipoSinPrecio(tipoServicioNombre)) {
+      const fs = String(fecha_servicio || "");
+      const y = Number(fs.slice(0, 4));
+      const m = Number(fs.slice(5, 7));
+
+      // Por ahora fijo DBL (después lo conectamos a SGL/TPL si lo necesitas)
+      const tipoHab = "DBL";
+
+      console.log("[SRV PRECIO] lookup", {
+        id_servicio,
+        anio: y,
+        mes: m,
+        tipoHab
+      });
+
+      if (y && m) {
+        const [[pmSrv]] = await db.execute(
+          `
+          SELECT precio_usd
+          FROM servicio_precio_mes
+          WHERE id_servicio = ?
+            AND anio = ?
+            AND mes = ?
+            AND tipo_habitacion = ?
+          LIMIT 1
+          `,
+          [id_servicio, y, m, tipoHab]
+        );
+
+        console.log("[SRV PRECIO] resultado", pmSrv);
+
+        if (pmSrv && pmSrv.precio_usd != null) {
+          const p = Number(pmSrv.precio_usd);
+          if (Number.isFinite(p)) {
+            precioNormalizado = p;
+          }
+        }
+      }
+    }
+
+    // 3C) Normalización final: no negativos + 2 decimales (por seguridad)
+    if (precioNormalizado != null) {
+      if (!Number.isFinite(Number(precioNormalizado))) {
+        precioNormalizado = null;
+      } else {
+        precioNormalizado = Math.max(0, Number(precioNormalizado));
+        precioNormalizado = Math.round(precioNormalizado * 100) / 100;
+      }
+    }
+
     // 4) Orden del día (por fecha)
     const [maxRows] = await db.execute(
       `
