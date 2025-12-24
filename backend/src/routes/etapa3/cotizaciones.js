@@ -43,6 +43,16 @@ function pickOtro(enumVal, otroVal) {
   return enumVal;
 }
 
+// Parse seguro: devuelve {y,m} o null
+function getYearMonthFromYmd(fechaYmd) {
+  const fs = String(fechaYmd || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}/.test(fs)) return null;
+  const y = Number(fs.slice(0, 4));
+  const m = Number(fs.slice(5, 7));
+  if (!Number.isFinite(y) || !Number.isFinite(m) || y <= 0 || m < 1 || m > 12) return null;
+  return { y, m };
+}
+
 // Texto “Directo / X escala(s)”
 function textoEscalas(escalas) {
   const n = Number(escalas);
@@ -383,8 +393,7 @@ router.get("/cotizaciones/:id", async (req, res) => {
 
 // =========================================================
 // POST /api/cotizaciones/:id/items
-// ✅ A2 recomendado: autocalcular precio_usd para ALOJAMIENTO:
-// precio_total = precio_noche_mes * noches * habitaciones
+// ✅ A2 recomendado: autocalcular precio_usd para ALOJAMIENTO usando VIEW
 // =========================================================
 router.post("/cotizaciones/:id/items", async (req, res) => {
   try {
@@ -404,8 +413,6 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
       idioma_override,
       nota_linea,
       precio_usd,
-
-      // opcional: si luego quieres elegir DBL/SGL/TPL desde el front
       tipo_habitacion
     } = req.body || {};
 
@@ -445,10 +452,8 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
       if (!Number.isNaN(n)) precioNormalizado = n;
     }
 
-    // 3) ✅ Si es alojamiento y NO llegó precio_usd, lo calculamos por alojamiento_precio_mes (A2)
+    // 3) ✅ ALOJAMIENTO: si NO llega precio_usd, lo calculamos con v_alojamiento_precio_mes
     if (esTipoAlojamiento(tipoServicioNombre) && (precioNormalizado === null)) {
-
-      // a) datos del alojamiento (incluyendo OTRO)
       const [[aloj]] = await db.execute(
         `
         SELECT
@@ -466,29 +471,25 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
         [id_servicio]
       );
 
-      if (aloj) {
+      const ym = getYearMonthFromYmd(fecha_servicio);
+      const tipoHab = normalizarTipoHabitacion(tipo_habitacion);
+
+      if (aloj && ym) {
         const noches = Number(aloj.noches || 0);
         const habitaciones = Number(aloj.habitaciones || 1);
 
+        // ✅ AQUI ESTABA EL BUG: ahora sí respeta OTRO
         const categoriaHotel = pickOtro(aloj.categoria_hotel, aloj.categoria_hotel_otro);
-        const categoriaHab = pickOtro(aloj.categoria_hab, aloj.categoria_hab_otro);
-        const regimen = pickOtro(aloj.regimen, aloj.regimen_otro);
+        const categoriaHab   = pickOtro(aloj.categoria_hab, aloj.categoria_hab_otro);
+        const regimen        = pickOtro(aloj.regimen, aloj.regimen_otro);
 
-        // b) año/mes desde fecha_servicio (YYYY-MM-DD)
-        const fs = String(fecha_servicio || "");
-        const y = Number(fs.slice(0, 4));
-        const m = Number(fs.slice(5, 7));
-
-        // c) tipo habitación (DBL default por ahora)
-        const tipoHab = normalizarTipoHabitacion(tipo_habitacion);
-
-        if (noches > 0 && habitaciones > 0 && categoriaHotel && categoriaHab && regimen && y && m) {
+        if (noches > 0 && habitaciones > 0 && categoriaHotel && categoriaHab && regimen) {
           const [[pm]] = await db.execute(
             `
             SELECT precio_usd
-            FROM alojamiento_precio_mes
+            FROM v_alojamiento_precio_mes
             WHERE id_ciudad = ?
-              AND categoria = ?
+              AND categoria_hotel = ?
               AND categoria_hab = ?
               AND regimen = ?
               AND anio = ?
@@ -496,7 +497,7 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
               AND tipo_habitacion = ?
             LIMIT 1
             `,
-            [srv.id_ciudad, categoriaHotel, categoriaHab, regimen, y, m, tipoHab]
+            [srv.id_ciudad, categoriaHotel, categoriaHab, regimen, ym.y, ym.m, tipoHab]
           );
 
           if (pm && pm.precio_usd != null) {
@@ -506,29 +507,16 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
               precioNormalizado = Math.round(total * 100) / 100;
             }
           }
-          // Si no encuentra precio, precioNormalizado queda null (pendiente de precio)
         }
       }
     }
 
-    // 3B) ✅ Si NO es alojamiento y NO llegó precio_usd, lo buscamos en servicio_precio_mes
-    //     (aplica para boleto/traslado/tour/etc; NO aplica para vuelo/tren)
+    // 3B) ✅ No alojamiento: si no llegó precio_usd, buscar en servicio_precio_mes (menos tren/vuelo)
     if (!esTipoAlojamiento(tipoServicioNombre) && (precioNormalizado === null) && !esTipoSinPrecio(tipoServicioNombre)) {
-      const fs = String(fecha_servicio || "");
-      const y = Number(fs.slice(0, 4));
-      const m = Number(fs.slice(5, 7));
+      const ym = getYearMonthFromYmd(fecha_servicio);
+      const tipoHab = "DBL"; // por ahora fijo
 
-      // Por ahora fijo DBL (después lo conectamos a SGL/TPL si lo necesitas)
-      const tipoHab = "DBL";
-
-      console.log("[SRV PRECIO] lookup", {
-        id_servicio,
-        anio: y,
-        mes: m,
-        tipoHab
-      });
-
-      if (y && m) {
+      if (ym) {
         const [[pmSrv]] = await db.execute(
           `
           SELECT precio_usd
@@ -539,21 +527,17 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
             AND tipo_habitacion = ?
           LIMIT 1
           `,
-          [id_servicio, y, m, tipoHab]
+          [id_servicio, ym.y, ym.m, tipoHab]
         );
-
-        console.log("[SRV PRECIO] resultado", pmSrv);
 
         if (pmSrv && pmSrv.precio_usd != null) {
           const p = Number(pmSrv.precio_usd);
-          if (Number.isFinite(p)) {
-            precioNormalizado = p;
-          }
+          if (Number.isFinite(p)) precioNormalizado = p;
         }
       }
     }
 
-    // 3C) Normalización final: no negativos + 2 decimales (por seguridad)
+    // 3C) Normalización final
     if (precioNormalizado != null) {
       if (!Number.isFinite(Number(precioNormalizado))) {
         precioNormalizado = null;
@@ -563,7 +547,7 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
       }
     }
 
-    // 4) Orden del día (por fecha)
+    // 4) Orden del día
     const [maxRows] = await db.execute(
       `
       SELECT COALESCE(MAX(orden_dia), 0) AS maxOrden

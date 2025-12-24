@@ -103,4 +103,31 @@ router.get("/catalogos/config", async (_req, res) => {
   }
 });
 
+router.post("/catalogos/:grupo", async (req, res) => {
+  try {
+    const grupo = String(req.params.grupo || "").trim();
+    let valor = String(req.body?.valor || "").trim();
+
+    if (!grupo) return res.status(400).json({ ok:false, mensaje:"grupo requerido" });
+    if (!valor) return res.status(400).json({ ok:false, mensaje:"valor requerido" });
+
+    // Normaliza (si quieres para alojamiento, en código)
+    valor = valor.toUpperCase();
+
+    await pool.execute(
+      `
+      INSERT INTO catalogo_opcion (grupo, valor, activo)
+      VALUES (?, ?, 1)
+      ON DUPLICATE KEY UPDATE activo = 1
+      `,
+      [grupo, valor]
+    );
+
+    return res.json({ ok:true, grupo, valor });
+  } catch (e) {
+    console.error("POST /catalogos/:grupo", e);
+    return res.status(500).json({ ok:false, mensaje:"Error guardando catálogo", error:e.message });
+  }
+});
+
 module.exports = router;

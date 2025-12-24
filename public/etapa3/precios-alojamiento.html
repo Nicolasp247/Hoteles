@@ -3,12 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Precios Alojamiento</title>
+  <title>Precios Alojamiento (por hotel)</title>
   <link rel="stylesheet" href="../css/estilos.css" />
   <style>
     .grid { display: grid; gap: 12px; }
-    .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; align-items: end; }
-    .row2 { display: grid; grid-template-columns: 1fr 1fr 1fr 160px 160px; gap: 10px; align-items: end; }
+    .row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; align-items: end; }
+    .row2 { display: grid; grid-template-columns: 1fr 1fr 1fr 180px 160px; gap: 10px; align-items: end; }
+    .row3 { display: grid; grid-template-columns: 1fr 220px; gap: 10px; align-items: end; }
     table { width: 100%; border-collapse: collapse; }
     th, td { border: 1px solid #ddd; padding: 8px; }
     th { text-align: left; }
@@ -16,12 +17,18 @@
     .muted { opacity: 0.8; font-size: 0.95em; }
     .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .msg { margin-top: 10px; }
+
+    .wrap-otro { display: none; }
+    .wrap-otro input { width: 100%; }
   </style>
 </head>
 <body>
   <main class="container">
-    <h1>Precios de Alojamiento</h1>
-    <p class="muted">Precio por noche (por habitación). Guardas por ciudad + cat hotel + cat hab + régimen + año + mes + tipo hab.</p>
+    <h1>Precios de Alojamiento (por hotel)</h1>
+    <p class="muted">
+      Precio por noche (por habitación) guardado por: hotel + cat hotel + cat hab + régimen + año + mes + tipo hab.
+      Esto alimenta el promedio que usa el cotizador.
+    </p>
 
     <section class="grid">
 
@@ -29,25 +36,39 @@
         <div><label>Continente</label><select id="filtro-continente"></select></div>
         <div><label>País</label><select id="filtro-pais"></select></div>
         <div><label>Ciudad</label><select id="filtro-ciudad"></select></div>
+        <div><label>Hotel</label><select id="filtro-hotel"></select></div>
       </div>
 
       <div class="row2">
         <div>
           <label>Categoría hotel</label>
           <select id="sel-cat-hotel"></select>
+          <div id="wrap-cat-hotel-otro" class="wrap-otro">
+            <input id="txt-cat-hotel" type="text" placeholder="Escribe nueva categoría hotel..." />
+          </div>
         </div>
+
         <div>
           <label>Categoría habitación</label>
           <select id="sel-cat-hab"></select>
+          <div id="wrap-cat-hab-otro" class="wrap-otro">
+            <input id="txt-cat-hab" type="text" placeholder="Escribe nueva categoría habitación..." />
+          </div>
         </div>
+
         <div>
           <label>Régimen</label>
           <select id="sel-regimen"></select>
+          <div id="wrap-regimen-otro" class="wrap-otro">
+            <input id="txt-regimen" type="text" placeholder="Escribe nuevo régimen..." />
+          </div>
         </div>
+
         <div>
           <label>Año</label>
           <input id="inp-anio" type="number" min="2000" max="2100" />
         </div>
+
         <div>
           <label>Tipo hab</label>
           <select id="sel-tipo-hab">
