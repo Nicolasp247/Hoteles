@@ -1,340 +1,405 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
   <meta charset="UTF-8" />
   <title>Cotizador – Editar cotización</title>
-
   <link rel="stylesheet" href="cotizacion-editar.css" />
 </head>
+
 <body>
   <header>
-    <h1>Cotización: <span id="header-id"></span></h1>
-    <nav>
-      <a href="../index.html">Inicio</a> |
-      <a href="cotizacion-crear.html">Nueva cotización</a> |
-      <a href="index-etapa3.html">Menú cotizaciones</a>
-    </nav>
-    <hr />
+    <div class="barra_superior">
+      <div class="div1">
+        <h1>Cotización: <span id="header-id"></span></h1>
+      </div>
+      <div class="div2">
+        <nav>
+          <a href="../index.html">Inicio</a>
+          <a href="cotizacion-crear.html">Nueva cotización</a>
+          <a href="index-etapa3.html">Menú cotizaciones</a>
+        </nav>
+      </div>
+    </div>
   </header>
 
   <main>
     <!-- 1. SERVICIOS (Filtros + selección de servicio) -->
-    <section>
-      <h2>1. Servicios</h2>
+    <div class="parent_servicios">
+      <div class="div1">
+        <h2>1. Servicios</h2>
+      </div>
 
       <!-- Filtros principales -->
-      <div class="filtros-grid">
-        <div>
-          <label>Continente<br/>
-            <select id="filtro-continente">
-              <option value="">(Todos)</option>
-            </select>
-          </label>
-        </div>
-        <div>
-          <label>País<br/>
-            <select id="filtro-pais">
-              <option value="">(Todos)</option>
-            </select>
-          </label>
-        </div>
-        <div>
-          <label>Ciudad<br/>
-            <select id="filtro-ciudad">
-              <option value="">(Todas)</option>
-            </select>
-          </label>
-        </div>
+      <div class="div3">
+        <label>Continente<br/>
+          <select id="filtro-continente">
+            <option value="">(Todos)</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="div4">
+        <label>País<br />
+          <select id="filtro-pais">
+            <option value="">(Todos)</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="div5">
+        <label>Ciudad<br />
+          <select id="filtro-ciudad">
+            <option value="">(Todas)</option>
+          </select>
+        </label>
       </div>
 
       <!-- Tipo de servicio + fechas -->
-      <div class="filtros-grid filtros-servicio">
-        <div>
-          <label>Tipo de servicio<br/>
-            <select id="filtro-tipo-servicio">
-              <option value="">(Todos)</option>
-            </select>
-          </label>
-        </div>
+      <div class="div6">
+        <label>Tipo de servicio<br />
+          <select id="filtro-tipo-servicio">
+            <option value="">(Todos)</option>
+          </select>
+        </label>
+      </div>
 
-        <div>
-          <label>Fecha de uso (desde)<br/>
-            <input type="date" id="fecha-desde" />
-          </label>
-        </div>
+      <div class="div7">
+        <label>Fecha de uso (desde)<br />
+          <input type="date" id="fecha-desde" />
+        </label>
+      </div>
 
+      <div class="div8">
         <div id="wrapper-fecha-hasta">
-          <label>Fecha de uso (hasta)<br/>
+          <label>Fecha de uso (hasta)<br />
             <input type="date" id="fecha-hasta" />
           </label>
         </div>
       </div>
 
       <!-- Seleccionar servicio + opcional -->
-      <div class="seleccionar-servicio">
-        <div>
-          <label>Seleccionar servicio<br/>
-            <select id="select-servicio">
-              <option value="">(Seleccionar servicio)</option>
-            </select>
-          </label>
-        </div>
+      <div class="div9">
+        <label>Seleccionar servicio<br />
+          <select id="select-servicio">
+            <option value="">(Seleccionar servicio)</option>
+          </select>
+        </label>
+      </div>
 
-        <div class="opcional-wrapper">
-          <span>Opcional</span>
-          <label>
-            <input type="checkbox" id="chk-opcional" />
-            Sí
-          </label>
+      <div class="div10">
+        <span>Opcional</span>
+        <label>
+          <input type="checkbox" id="chk-opcional" />
+          Sí
+        </label>
+      </div>
+
+      <!-- Crear servicio rápido -->
+      <div class="div12">
+        <button type="button" id="btn-toggle-crear-servicio">
+          + Crear servicio rápido
+        </button>
+      </div>
+
+      <div class="div11">
+        <div class="botones-acciones">
+          <button id="btn-insertar-servicio" type="button">Insertar servicio</button>
         </div>
       </div>
-    </section>
+    </div>
 
-    <!-- Crear servicio rápido -->
-    <section class="crear-servicio-rapido">
-      <button type="button" id="btn-toggle-crear-servicio">
-        + Crear servicio rápido
-      </button>
+    <div id="panel-crear-servicio" style="display:none;">
+      <section class="parent_crear_servicio">
+        <div class="div1">
+          <h3>Crear servicio</h3>
+        </div>
 
-      <div id="panel-crear-servicio" style="display:none;">
-        <h3>Crear servicio</h3>
-
-        <div class="grid-2">
-          <label>Proveedor<br/>
+        <div class="div3">
+          <label>Proveedor<br />
             <select id="nuevo-id-proveedor"></select>
           </label>
+        </div>
 
-          <label>Link de reserva<br/>
+        <div class="div4">
+          <label>Link de reserva<br />
             <input type="url" id="nuevo-link-reserva" placeholder="https://..." />
           </label>
+        </div>
 
-          <label>Nombre WTravel<br/>
-            <input type="text" id="nuevo-nombre-wtravel" />
+        <!-- ✅ NOMBRE AUTOMÁTICO (ya no se escribe) -->
+        <div class="div5">
+          <label>Nombre del servicio (automático)<br />
+            <input type="text" id="nuevo-nombre-auto-preview" value="Se genera automáticamente al guardar" readonly />
           </label>
+        </div>
 
+        <div class="div6">
           <label>Tiempo del servicio</label>
           <select id="nuevo-tiempo-servicio-select"></select>
           <input id="nuevo-tiempo-servicio-txt" type="text" placeholder="¿Cuál?" style="display:none;">
+        </div>
 
-          <label>Privado<br/>
+        <div class="div7">
+          <label>Privado<br />
             <select id="nuevo-privado">
               <option value="0">No</option>
               <option value="1">Sí</option>
             </select>
           </label>
+        </div>
 
-          <label>Descripción<br/>
+        <div class="div8">
+          <label>Descripción<br />
             <input type="text" id="nuevo-descripcion" placeholder="Opcional..." />
           </label>
         </div>
+      </section>
 
-        <!-- Campos dinámicos -->
-        <div id="nuevo-campos-dinamicos">
+      <!-- Campos dinámicos -->
 
-          <!-- ============ ALOJAMIENTO ============ -->
-          <section id="sec-alojamiento" style="display:none;">
+      <!-- ============ ALOJAMIENTO ============ -->
+      <section id="sec-alojamiento" style="display:none;">
+        <div class="parent_crear_servicio_alojamiento" id="nuevo-campos-dinamicos">
+          <div class="div1">
             <h4>Detalle de alojamiento</h4>
-            <div class="grid-2">
-              <label>Noches<br/>
-                <input type="number" id="aloj-noches" min="1" value="1" />
-              </label>
+          </div>
+          <div class="div3">
+            <label>Noches<br />
+              <input type="number" id="aloj-noches" min="1" value="1" />
+            </label>
+          </div>
+          <div class="div4">
+            <label>Habitaciones<br />
+              <input type="number" id="aloj-habitaciones" min="1" value="1" />
+            </label>
+          </div>
+          <div class="div5">
+            <label>Régimen<br />
+              <select id="aloj-regimen"></select>
+              <input id="aloj-regimen-txt" type="text" placeholder="¿Cuál?" style="display:none; margin-top:6px;">
+            </label>
+          </div>
 
-              <label>Habitaciones<br/>
-                <input type="number" id="aloj-habitaciones" min="1" value="1" />
-              </label>
+          <div class="div6">
+            <label>Categoría hotel<br />
+              <select id="aloj-categoria-hotel"></select>
+              <input id="aloj-categoria-hotel-txt" type="text" placeholder="¿Cuál?"
+                style="display:none; margin-top:6px;">
+            </label>
+          </div>
 
-              <label>Régimen<br/>
-                <select id="aloj-regimen"></select>
-              </label>
+          <div class="div7">
+            <label>Categoría habitación<br />
+              <select id="aloj-categoria-hab"></select>
+              <input id="aloj-categoria-hab-txt" type="text" placeholder="¿Cuál?"
+                style="display:none; margin-top:6px;">
+            </label>
+          </div>
+        </div>
+      </section>
 
-              <label id="wrap-aloj-regimen-otro" style="display:none;">OTRO: ¿cuál?<br/>
-                <div style="display:flex; gap:8px;">
-                  <select id="aloj-regimen-otro-select" style="flex:1;"></select>
-                  <input type="text" id="aloj-regimen-otro-txt" placeholder="Escribir..." style="flex:1; display:none;" />
-                </div>
-              </label>
-
-              <label>Categoría hotel<br/>
-                <select id="aloj-categoria-hotel"></select>
-              </label>
-
-              <label id="wrap-aloj-cat-hotel-otro" style="display:none;">OTRO: ¿cuál?<br/>
-                <div style="display:flex; gap:8px;">
-                  <select id="aloj-categoria-hotel-otro-select" style="flex:1;"></select>
-                  <input type="text" id="aloj-categoria-hotel-otro-txt" placeholder="Escribir..." style="flex:1; display:none;" />
-                </div>
-              </label>
-
-              <label>Categoría habitación<br/>
-                <select id="aloj-categoria-hab"></select>
-              </label>
-
-              <label id="wrap-aloj-cat-hab-otro" style="display:none;">OTRO: ¿cuál?<br/>
-                <div style="display:flex; gap:8px;">
-                  <select id="aloj-categoria-hab-otro-select" style="flex:1;"></select>
-                  <input type="text" id="aloj-categoria-hab-otro-txt" placeholder="Escribir..." style="flex:1; display:none;" />
-                </div>
-              </label>
-            </div>
-          </section>
-
-          <!-- ============ BOLETO ============ -->
-          <section id="sec-boleto" style="display:none;">
+      <!-- ============ BOLETO ============ -->
+      <section id="sec-boleto" style="display:none;">
+        <div class="parent_crear_servicio_boleto">
+          <div class="div1">
             <h4>Detalle de boleto de entrada</h4>
-            <div class="grid-2">
-              <label>Lugar</label>
-              <select id="be-lugar-select"></select>
-              <input id="be-lugar-txt" type="text" placeholder="¿Cuál?" style="display:none;">
+          </div>
+          <div class="div3">
+            <label>Lugar</label>
+            <select id="be-lugar-select"></select>
+            <input id="be-lugar-txt" type="text" placeholder="¿Cuál?" style="display:none;">
+          </div>
+          <div class="div4">
+            <label>Tipo de entrada<br />
+              <select id="be-tipo-entrada"></select>
+              <input id="be-tipo-entrada-txt" type="text" placeholder="¿Cuál?"
+                style="display:none; margin-top:6px;">
+            </label>
+          </div>
+          <div class="div5">
+            <label>Tipo de guía<br />
+              <select id="be-tipo-guia"></select>
+              <input id="be-tipo-guia-txt" type="text" placeholder="¿Cuál?"
+                style="display:none; margin-top:6px;">
+            </label>
+          </div>
+          <div class="div6">
+            <label>Idioma<br />
+              <select id="be-idioma"></select>
+              <input id="be-idioma-txt" type="text" placeholder="¿Cuál?"
+                style="display:none; margin-top:6px;">
+            </label>
+          </div>
+        </div>
+      </section>
 
-              <label>Tipo de entrada<br/>
-                <select id="be-tipo-entrada"></select>
-              </label>
-
-              <label id="wrap-be-tipo-otra" style="display:none;">OTRA: ¿cuál?<br/>
-                <div style="display:flex; gap:8px;">
-                  <select id="be-tipo-otra-select" style="flex:1;"></select>
-                  <input type="text" id="be-tipo-otra-txt" placeholder="Escribir..." style="flex:1; display:none;" />
-                </div>
-              </label>
-
-              <label>Audio guía<br/>
-                <select id="be-audioguia">
-                  <option value="0">No</option>
-                  <option value="1">Sí</option>
-                </select>
-              </label>
-
-              <label>Idioma<br/>
-                <select id="be-idioma"></select>
-              </label>
-            </div>
-          </section>
-
-          <!-- ============ VUELO (TODO SELECT) ============ -->
-          <section id="sec-vuelo" style="display:none;">
+      <!-- ============ VUELO (TODO SELECT) ============ -->
+      <section id="sec-vuelo" style="display:none;">
+        <div class="parent_crear_servicio_vuelo">
+          <div class="div1">
             <h4>Detalle de vuelo</h4>
-            <div class="grid-2">
-              <label>Origen<br/>
-                <select id="vu-origen"></select>
-              </label>
-              <label>Destino<br/>
-                <select id="vu-destino"></select>
-              </label>
-              <label>Escalas<br/>
-                <select id="vu-escalas"></select>
-              </label>
-              <label>Clase<br/>
-                <select id="vu-clase"></select>
-              </label>
-              <label>Equipaje<br/>
-                <select id="vu-equipaje"></select>
-              </label>
-            </div>
-          </section>
+          </div>
+          <div class="div3">
+            <label>Origen<br />
+              <select id="vu-origen"></select>
+              <input id="vu-origen-txt" type="text" placeholder="¿Cuál?" style="display:none; margin-top:6px;">
+            </label>
+          </div>
+          <div class="div4">
+            <label>Destino<br />
+              <select id="vu-destino"></select>
+            </label>
+          </div>
+          <div class="div5">
+            <label>Escalas<br />
+              <select id="vu-escalas"></select>
+            </label>
+          </div>
+          <div class="div6">
+            <label>Clase<br />
+              <select id="vu-clase"></select>
+            </label>
+          </div>
+          <div class="div7">
+            <label>Equipaje<br />
+              <select id="vu-equipaje"></select>
+            </label>
+          </div>
+        </div>
+      </section>
 
-          <!-- ============ TREN (TODO SELECT) ============ -->
-          <section id="sec-tren" style="display:none;">
+      <!-- ============ TREN (TODO SELECT) ============ -->
+      <section id="sec-tren" style="display:none;">
+        <div class="parent_crear_servicio_tren">
+          <div class="div1">
             <h4>Detalle de tren</h4>
-            <div class="grid-2">
-              <label>Origen<br/>
-                <select id="tr-origen"></select>
-              </label>
-              <label>Destino<br/>
-                <select id="tr-destino"></select>
-              </label>
-              <label>Escalas<br/>
-                <select id="tr-escalas"></select>
-              </label>
-              <label>Clase<br/>
-                <select id="tr-clase"></select>
-              </label>
-              <label>Equipaje<br/>
-                <select id="tr-equipaje"></select>
-              </label>
-              <label>Asientos reservados<br/>
-                <select id="tr-sillas">
-                  <option value="1">Sí</option>
-                  <option value="0">No</option>
-                </select>
-              </label>
-            </div>
-          </section>
+          </div>
+          <div class="div3">
+            <label>Origen<br />
+              <select id="tr-origen"></select>
+              <input id="tr-origen-txt" type="text" placeholder="¿Cuál?" style="display:none; margin-top:6px;">
+            </label>
+          </div>
+          <div class="div4">
+            <label>Destino<br />
+              <select id="tr-destino"></select>
+            </label>
+          </div>
+          <div class="div5">
+            <label>Escalas<br />
+              <select id="tr-escalas"></select>
+            </label>
+          </div>
+          <div class="div6">
+            <label>Clase<br />
+              <select id="tr-clase"></select>
+            </label>
+          </div>
+          <div class="div7">
+            <label>Equipaje<br />
+              <select id="tr-equipaje"></select>
+            </label>
+          </div>
+          <div class="div8">
+            <label>Asientos reservados<br />
+              <select id="tr-sillas">
+                <option value="1">Sí</option>
+                <option value="0">No</option>
+              </select>
+            </label>
+          </div>
+        </div>
+      </section>
 
-          <!-- ============ TRASLADO (SIN duración/equipaje) ============ -->
-          <section id="sec-traslado" style="display:none;">
+      <!-- ============ TRASLADO (SIN duración/equipaje) ============ -->
+      <section id="sec-traslado" style="display:none;">
+        <div class="parent_crear_servicio_traslado">
+          <div class="div1">
             <h4>Detalle de traslado</h4>
-            <div class="grid-2">
-              <label>Origen</label>
-              <select id="tr-origen-select"></select>
-              <input id="tr-origen-txt" type="text" placeholder="¿Cuál?" style="display:none;">
+          </div>
+          <div class="div3">
+            <label>Origen</label>
+            <select id="tr-origen-select"></select>
+            <input id="tr-origen-txt" type="text" placeholder="¿Cuál?" style="display:none;">
+          </div>
+          <div class="div4">
+            <label>Destino</label>
+            <select id="tr-destino-select"></select>
+            <input id="tr-destino-txt" type="text" placeholder="¿Cuál?" style="display:none;">
+          </div>
+          <div class="div5">
+            <label>Tipo de traslado<br />
+              <select id="tr-tipo"></select>
+            </label>
+            <label id="wrap-tr-tipo-otro" style="display:none;">OTRO: ¿cuál?<br />
+              <input type="text" id="tr-tipo-otro" placeholder="Ej: Aeropuerto - Puerto" />
+            </label>
+          </div>
+          <div class="div6">
+            <label>Vehículo<br />
+              <select id="tr-vehiculo"></select>
+              <input id="tr-vehiculo-txt" type="text" placeholder="¿Cuál?" style="display:none; margin-top:6px;">
+            </label>
+          </div>
+          <div class="div10">
+            <label style="grid-column: 1 / -1;">Nota<br />
+              <input type="text" id="tr-nota" placeholder="Opcional..." />
+            </label>
+          </div>
+        </div>
+      </section>
 
-              <label>Destino</label>
-              <select id="tr-destino-select"></select>
-              <input id="tr-destino-txt" type="text" placeholder="¿Cuál?" style="display:none;">
-
-              <label>Tipo de traslado<br/>
-                <select id="tr-tipo"></select>
-              </label>
-
-              <label id="wrap-tr-tipo-otro" style="display:none;">OTRO: ¿cuál?<br/>
-                <input type="text" id="tr-tipo-otro" placeholder="Ej: Aeropuerto - Puerto" />
-              </label>
-
-              <label>Vehículo<br/>
-                <select id="tr-vehiculo"></select>
-              </label>
-
-              <label id="wrap-tr-veh-otro" style="display:none;">OTRO: ¿cuál?<br/>
-                <input type="text" id="tr-vehiculo-otro" placeholder="Ej: SUV, Tuk-tuk..." />
-              </label>
-
-              <label style="grid-column: 1 / -1;">Nota<br/>
-                <input type="text" id="tr-nota" placeholder="Opcional..." />
-              </label>
-            </div>
-          </section>
-
-          <!-- ============ TOUR / EXCURSIÓN / VISITA (SIN duracion_min) ============ -->
-          <section id="sec-tour" style="display:none;">
+      <!-- ============ TOUR / EXCURSIÓN / VISITA (SIN duracion_min) ============ -->
+      <section id="sec-tour" style="display:none;">
+        <div class="parent_crear_servicio_tour">
+          <div class="div1">
             <h4>Detalle de excursión / visita</h4>
-            <div class="grid-2">
-              <label>Tipo de guía<br/>
-                <select id="tu-tipo-guia"></select>
-              </label>
-
-              <label id="wrap-tu-tipo-guia-otro" style="display:none;">OTRO: ¿cuál?<br/>
-                <input type="text" id="tu-tipo-guia-otro" placeholder="Ej: guía local especializado..." />
-              </label>
-
-              <label>Idioma del guía<br/>
-                <select id="tu-idioma"></select>
-              </label>
-
-              <label id="wrap-tu-idioma-otro" style="display:none;">OTRO: ¿cuál?<br/>
-                <input type="text" id="tu-idioma-otro" placeholder="Ej: francés, italiano..." />
-              </label>
-            </div>
-          </section>
-
+          </div>
+          <div class="div3">
+            <label>Tipo de guía<br />
+              <select id="tu-tipo-guia"></select>
+            </label>
+            <label id="wrap-tu-tipo-guia-otro" style="display:none;">OTRO: ¿cuál?<br />
+              <input type="text" id="tu-tipo-guia-otro" placeholder="Ej: guía local especializado..." />
+            </label>
+          </div>
+          <div class="div4">
+            <label>Idioma del guía<br />
+              <select id="tu-idioma"></select>
+              <input id="tu-idioma-txt" type="text" placeholder="¿Cuál?" style="display:none; margin-top:6px;">
+            </label>
+          </div>
         </div>
+      </section>
 
-        <div class="acciones">
-          <button type="button" id="btn-guardar-servicio-rapido">Guardar servicio</button>
-          <button type="button" id="btn-cancelar-servicio-rapido">Cancelar</button>
+      <!-- BOTONES GUARDAR / CANCELAR -->
+      <section>
+        <div class="parent_crear_servicio_botones">
+          <div class="div13">
+            <button type="button" id="btn-guardar-servicio-rapido">Guardar servicio</button>
+          </div>
+          <div class="div14">
+            <button type="button" id="btn-cancelar-servicio-rapido">Cancelar</button>
+          </div>
+          <div class="div15">
+            <p id="msg-crear-servicio" class="mensaje-error"></p>
+          </div>
         </div>
-
-        <p id="msg-crear-servicio" class="mensaje-error"></p>
-      </div>
-    </section>
+      </section>
+    </div>
 
     <!-- 2. SERVICIOS INCLUIDOS (tabla) -->
-    <section>
-      <h2>2. Servicios incluidos</h2>
-
+    <div class="parent_servicios_incluidos">
+      <div class="div1">
+        <h2>2. Servicios incluidos</h2>
+      </div>
+    </div>
+    <div class="container">
       <table class="tabla-servicios">
         <thead>
           <tr>
-            <th>Cambiar<br/>orden</th>
+            <th>Cambiar<br />orden</th>
             <th>Índice</th>
             <th>Fecha</th>
             <th>Servicio</th>
@@ -344,29 +409,32 @@
         </thead>
         <tbody id="tabla-servicios-body"></tbody>
       </table>
-    </section>
+    </div>
 
     <!-- 3. PRECIO TOTAL + BOTONES -->
-    <section class="bloque-total">
-      <h2>3. Precio total aproximado por persona en USD, porción terrestre</h2>
+    <section class="parent_precio_total_aprox">
+      <div class="div1">
+        <h2>3. Precio total aproximado por persona en USD, porción terrestre</h2>
+      </div>
 
-      <div class="total-wrapper">
+      <div class="div16">
         <label>
-          Total USD<br/>
+          Total USD<br />
           <input type="number" id="total-usd" readonly />
         </label>
       </div>
-
-      <div class="botones-acciones">
-        <button id="btn-insertar-servicio" type="button">Insertar servicio</button>
-        <button id="btn-crear-servicio" type="button">Crear servicio</button>
+      <div class="div17">
+        <div class="botones-acciones">
+          <button id="btn-crear-servicio" type="button">Crear servicio</button>
+        </div>
       </div>
     </section>
 
     <p id="mensaje-error" class="mensaje-error"></p>
   </main>
 
-  <script src="../components/api.js"></script>
-  <script src="cotizacion-editar.js"></script>
+  <script type="module" src="../components/api.js"></script>
+  <script type="module" src="cotizacion-editar.js"></script>
 </body>
+
 </html>

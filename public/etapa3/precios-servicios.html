@@ -4,157 +4,268 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Precios por servicio</title>
-  <link rel="stylesheet" href="../css/estilos.css" />
-  <style>
-    .grid { display: grid; gap: 12px; }
-    .row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 10px; align-items: end; }
-    .row2 { display: grid; grid-template-columns: 2fr 160px 160px 160px; gap: 10px; align-items: end; }
-
-    table { width: 100%; border-collapse: collapse; }
-    th, td { border: 1px solid #ddd; padding: 8px; }
-    th { text-align: left; }
-    input[type="number"] { width: 140px; }
-    .muted { opacity: 0.8; font-size: 0.95em; }
-    .msg { margin-top: 10px; }
-
-    .card {
-      border: 1px solid #ddd;
-      padding: 12px;
-      border-radius: 8px;
-      background: #fff;
-    }
-    .kv { display: grid; grid-template-columns: 160px 1fr; gap: 8px; }
-    .kv div { padding: 2px 0; }
-    .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-
-    .edit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .edit-grid .full { grid-column: 1 / -1; }
-    textarea { width: 100%; min-height: 90px; }
-    .hide { display: none; }
-  </style>
+  <!-- Estilos específicos (los hacemos aparte) -->
+  <link rel="stylesheet" href="precios-servicios.css" />
 </head>
+
 <body>
-  <main class="container">
-    <h1>Precios por servicio (NO alojamiento)</h1>
-    <p class="muted">Filtra por ubicación para que el servicio tenga contexto. Si dejas un mes vacío, queda NULL.</p>
+  <header>
+    <div class="barra_superior">
+      <div class="div1">
+        <h1>Precios por servicio (NO alojamiento)</h1>
+      </div>
+      <div class="div2">
+        <p class="muted">
+          Filtra por ubicación para que el servicio tenga contexto. Si dejas un mes vacío, queda NULL.
+        </p>
+      </div>
+    </div>
+  </header>
 
-    <section class="grid">
+  <main>
+    <section>
+      <!-- =========================
+           FILTROS DE UBICACIÓN
+      ========================== -->
+      <div class="parent_filtros">
+        <div class="div1">
+          <h2>Filtros</h2>
+          <p class="card-subtitle muted">Reduce la lista de servicios por ubicación y tipo.</p>
+        </div>
 
-      <!-- Filtros ubicación -->
-      <div class="row">
-        <div>
-          <label>Continente</label>
-          <select id="filtro-continente"></select>
+        <div class="div3">
+          <label>Continente <br/>
+            <select id="filtro-continente"></select>
+          </label>
         </div>
-        <div>
-          <label>País</label>
-          <select id="filtro-pais"></select>
+
+        <div class="div4">
+          <label>País <br/>
+            <select id="filtro-pais"></select>
+          </label>
         </div>
-        <div>
-          <label>Ciudad</label>
-          <select id="filtro-ciudad"></select>
+
+        <div class="div5">
+          <label>Ciudad <br/>
+            <select id="filtro-ciudad"></select>
+          </label>
         </div>
-        <div>
-          <label>Tipo</label>
-          <select id="filtro-tipo"></select>
+
+        <div class="div6">
+          <label>Tipo servicio<br/>
+            <select id="filtro-tipo"></select>
+          </label>
+        </div>
+
+        <!-- ✅ Año solo 2025/2026 -->
+        <div class="div7">
+          <label>Año <br/>
+            <select id="sel-anio">
+              <option value="2025">2025</option>
+              <option value="2026">2026</option>
+            </select>
+          </label>
         </div>
       </div>
 
-      <!-- Servicio + año + tipo habitación -->
-      <div class="row2">
-        <div>
-          <label>Servicio</label>
-          <select id="sel-servicio"></select>
+      <!-- =========================
+           SELECCIÓN DE SERVICIO (TODOS LOS SERVICIOS)
+      ========================== -->
+      <div class="parent_seleccionar_servicio">
+        <div class="div1">
+          <h2>Elige un servicio</h2>
+          <p>Selecciona el servicio para ver o editar precios.</p>
         </div>
 
-        <div>
-          <label>Año</label>
-          <input id="inp-anio" type="number" min="2000" max="2100" />
+        <div class="div8">
+          <label for="sel-servicio">Servicio<br/>
+            <select id="sel-servicio"></select>
+          </label>
         </div>
 
-        <div>
-          <label>Tipo habitación</label>
-          <select id="sel-tipo-hab">
-            <option value="DBL">DBL</option>
-            <option value="SGL">SGL</option>
-            <option value="TPL">TPL</option>
-          </select>
-        </div>
-
-        <div class="actions">
-          <button id="btn-cargar" type="button">Cargar</button>
+        <!-- ✅ Botón al lado del servicio -->
+        <div class="div9">
+          <button id="btn-sin-precio" type="button" class="btn-secondary">
+            Mostrar servicios sin precio
+          </button>
         </div>
       </div>
 
-      <!-- Detalles del servicio -->
-      <div class="card">
+      <!-- =========================
+           TABLA: SERVICIOS SIN PRECIO (PANTALLA NORMAL)
+      ========================== -->
+      <section id="card-sin-precio" class="card hide" aria-label="Servicios sin precio">
+        <div class="card-header">
+          <h2 class="card-title">Servicios sin precio</h2>
+          <p class="card-subtitle muted">
+            Lista de servicios que no tienen el precio completo para el año seleccionado.
+          </p>
+        </div>
+
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Ciudad</th>
+                <th>Nombre WTravel</th>
+                <th>Acción</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-sin-precio">
+              <tr>
+                <td colspan="3" class="muted">Presiona “Mostrar servicios sin precio” para cargar.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
         <div class="actions">
-          <strong>Detalle del servicio</strong>
-          <button id="btn-editar" type="button" class="hide">Editar info</button>
-          <button id="btn-cancelar-edicion" type="button" class="hide">Cancelar</button>
-          <button id="btn-guardar-edicion" type="button" class="hide">Guardar cambios</button>
+          <button id="btn-cerrar-sin-precio" type="button" class="btn-secondary">
+            Cerrar lista
+          </button>
         </div>
+      </section>
 
-        <div id="srv-detalle" class="kv" style="margin-top:10px;">
-          <div class="muted">Selecciona un servicio para ver detalles.</div>
-        </div>
+      <!-- =========================
+           INFO BÁSICA DEL SERVICIO SELECCIONADO DESDE LA TABLA (PANTALLA NORMAL)
+      ========================== -->
+      <section id="card-servicio-seleccionado" class="card hide" aria-label="Servicio seleccionado">
+        <div class="card-header card-header-inline">
+          <div>
+            <h2 class="card-title">Servicio seleccionado</h2>
+            <p class="card-subtitle muted">Revisa datos y elige qué quieres hacer.</p>
+          </div>
 
-        <!-- Form edición -->
-        <div id="srv-editar" class="hide" style="margin-top:12px;">
-          <div class="edit-grid">
-            <div class="full">
-              <label>Nombre WTravel</label>
-              <input id="ed-nombre" type="text" />
-            </div>
-
-            <div>
-              <label>Proveedor</label>
-              <select id="ed-proveedor"></select>
-            </div>
-
-            <div>
-              <label>Tiempo del servicio</label>
-              <input id="ed-tiempo" type="text" placeholder="Ej: 4h 30m" />
-            </div>
-
-            <div>
-              <label>Privado</label>
-              <select id="ed-privado">
-                <option value="0">No</option>
-                <option value="1">Sí</option>
-              </select>
-            </div>
-
-            <div class="full">
-              <label>Link reserva</label>
-              <input id="ed-link" type="text" placeholder="https://..." />
-            </div>
-
-            <div class="full">
-              <label>Descripción</label>
-              <textarea id="ed-desc" placeholder="Descripción del servicio"></textarea>
-            </div>
-
-            <div class="full muted" id="ed-readonly"></div>
+          <div class="actions">
+            <button id="btn-abrir-editar-modal" type="button" class="btn-secondary">
+              Editar información
+            </button>
+            <button id="btn-abrir-precios-modal" type="button" class="btn-primary">
+              Poner precios
+            </button>
+            <button id="btn-cancelar-servicio" type="button" class="btn-secondary">
+              Cancelar
+            </button>
           </div>
         </div>
-      </div>
 
-      <!-- Tabla precios -->
-      <table>
-        <thead>
-          <tr>
-            <th>Mes</th>
-            <th>Precio USD</th>
-          </tr>
-        </thead>
-        <tbody id="tbody-precios"></tbody>
-      </table>
+        <div id="srv-seleccionado-resumen" class="kv">
+          <div class="muted">Aún no has seleccionado un servicio de la tabla.</div>
+        </div>
+      </section>
 
-      <div class="actions">
-        <button id="btn-guardar" type="button">Guardar precios</button>
-        <span id="msg" class="msg"></span>
-      </div>
+      <!-- =========================
+           MODAL: EDITAR / PRECIOS (PANTALLA MODAL)
+      ========================== -->
+      <dialog id="modal-servicio" class="modal">
+        <div class="modal-content">
+
+          <div class="modal-header">
+            <div>
+              <h2 class="modal-title">Gestionar servicio</h2>
+              <p class="muted" id="modal-subtitle">Editar información o poner precios.</p>
+            </div>
+
+            <div class="actions">
+              <button id="btn-modal-editar" type="button" class="btn-secondary">Editar información</button>
+              <button id="btn-modal-precios" type="button" class="btn-primary">Poner precios</button>
+              <button id="btn-modal-cerrar" type="button" class="btn-secondary">Cancelar</button>
+            </div>
+          </div>
+
+          <!-- =========================
+               DETALLE DEL SERVICIO (reusa tu bloque)
+               (se muestra cuando modal está en modo "editar" o solo para ver)
+          ========================== -->
+          <section class="card" aria-label="Detalle del servicio">
+            <div class="card-header card-header-inline">
+              <div>
+                <h3 class="card-title">Detalle del servicio</h3>
+                <p class="card-subtitle muted">Información del servicio seleccionado.</p>
+              </div>
+
+              <div class="actions">
+                <button id="btn-editar" type="button" class="btn-secondary hide">Editar info</button>
+                <button id="btn-cancelar-edicion" type="button" class="btn-secondary hide">Cancelar</button>
+                <button id="btn-guardar-edicion" type="button" class="btn-primary hide">Guardar cambios</button>
+              </div>
+            </div>
+
+            <!-- Vista detalle -->
+            <div id="srv-detalle" class="kv">
+              <div class="muted">Selecciona un servicio para ver detalles.</div>
+            </div>
+
+            <!-- Form edición -->
+            <div id="srv-editar" class="hide">
+              <div class="form-grid form-grid-2">
+                <div class="field field-full">
+                  <label for="ed-nombre">Nombre WTravel</label>
+                  <input id="ed-nombre" type="text" />
+                </div>
+
+                <div class="field">
+                  <label for="ed-proveedor">Proveedor</label>
+                  <select id="ed-proveedor"></select>
+                </div>
+
+                <div class="field">
+                  <label for="ed-tiempo">Tiempo del servicio</label>
+                  <input id="ed-tiempo" type="text" placeholder="Ej: 4h 30m" />
+                </div>
+
+                <div class="field">
+                  <label for="ed-privado">Privado</label>
+                  <select id="ed-privado">
+                    <option value="0">No</option>
+                    <option value="1">Sí</option>
+                  </select>
+                </div>
+
+                <div class="field field-full">
+                  <label for="ed-link">Link reserva</label>
+                  <input id="ed-link" type="text" placeholder="https://..." />
+                </div>
+
+                <div class="field field-full">
+                  <label for="ed-desc">Descripción</label>
+                  <textarea id="ed-desc" placeholder="Descripción del servicio"></textarea>
+                </div>
+
+                <div class="field field-full muted" id="ed-readonly"></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- =========================
+               PRECIOS POR MES (reusa tu bloque)
+          ========================== -->
+          <section class="card" aria-label="Precios por mes">
+            <div class="card-header">
+              <h3 class="card-title">Precios por mes</h3>
+              <p class="card-subtitle muted">Edita valores en USD. Vacío = NULL.</p>
+            </div>
+
+            <div class="table-wrap">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Mes</th>
+                    <th>Precio USD</th>
+                  </tr>
+                </thead>
+                <tbody id="tbody-precios"></tbody>
+              </table>
+            </div>
+
+            <div class="actions actions-between">
+              <button id="btn-guardar" type="button" class="btn-primary">Guardar precios</button>
+              <span id="msg" class="msg" role="status" aria-live="polite"></span>
+            </div>
+          </section>
+
+        </div>
+      </dialog>
 
     </section>
   </main>

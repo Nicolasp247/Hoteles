@@ -1,4 +1,9 @@
 // public/etapa3/cotizacion-editar.js
+// ✅ Versión completa corregida:
+// - Flechas ↑/↓ ahora mueven ORDEN + FECHA (↑ resta 1 día, ↓ suma 1 día)
+// - Alojamiento: mueve el check-in; el rango se recalcula con noches
+// - Opcionales: no muestran precio y no suman al total
+// - Render de fecha: se calcula desde fechaYmd (ya no usa it.fecha que no existía)
 
 document.addEventListener("DOMContentLoaded", () => {
   const params = new URLSearchParams(window.location.search);
@@ -29,9 +34,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const panelCrear = document.getElementById("panel-crear-servicio");
   const selProveedorNuevo = document.getElementById("nuevo-id-proveedor");
   const inpLinkReserva = document.getElementById("nuevo-link-reserva");
-  const inpNombreW = document.getElementById("nuevo-nombre-wtravel");
 
-  // 👇 CAMBIO: tiempo_servicio ahora es select + txt (otro)
+  // ✅ Preview del nombre automático (si existe en el HTML)
+  const inpNombreAutoPreview = document.getElementById("nuevo-nombre-auto-preview");
+
+  // tiempo_servicio: select + txt
   const selTiempoServicio = document.getElementById("nuevo-tiempo-servicio-select");
   const txtTiempoServicio = document.getElementById("nuevo-tiempo-servicio-txt");
 
@@ -47,6 +54,12 @@ document.addEventListener("DOMContentLoaded", () => {
   let servicios = [];
   let nextIdLocal = 1;
 
+  // ✅ Mapa global: id_servicio (string) -> servicio_texto (string)
+  let servicioTextoById = new Map();
+
+  // ==========================
+  // Helpers UI
+  // ==========================
   function mostrarError(msg) {
     if (mensajeErrorEl) mensajeErrorEl.textContent = msg || "";
   }
@@ -59,20 +72,31 @@ document.addEventListener("DOMContentLoaded", () => {
     const text = await resp.text();
 
     let data;
-    try { data = JSON.parse(text); }
-    catch { throw new Error(`Respuesta no-JSON desde ${url}: ${text.slice(0, 180)}`); }
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(`Respuesta no-JSON desde ${url}: ${text.slice(0, 180)}`);
+    }
 
     if (Array.isArray(data)) return data;
     for (const k of posiblesKeys) if (Array.isArray(data?.[k])) return data[k];
     throw new Error(`Formato inesperado desde ${url}`);
   }
 
-  // ====== Catálogos ======
+  // ==========================
+  // Catálogos
+  // ==========================
   const catalogCache = {};
   async function cargarCatalogo(grupo) {
     if (catalogCache[grupo]) return catalogCache[grupo];
-    const lista = await fetchLista(`/api/catalogos/${encodeURIComponent(grupo)}`, ["opciones", "valores", "items"]);
-    const norm = lista.map(x => (typeof x === "string" ? { valor: x } : x)).filter(x => x?.valor);
+    const lista = await fetchLista(`/api/catalogos/${encodeURIComponent(grupo)}`, [
+      "opciones",
+      "valores",
+      "items",
+    ]);
+    const norm = lista
+      .map((x) => (typeof x === "string" ? { valor: x } : x))
+      .filter((x) => x?.valor);
     catalogCache[grupo] = norm;
     return norm;
   }
@@ -81,7 +105,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!selectEl) return;
     selectEl.innerHTML = "";
     if (firstText !== null) selectEl.appendChild(new Option(firstText, firstValue));
-    opciones.forEach(o => selectEl.appendChild(new Option(o.text, o.value)));
+    (opciones || []).forEach((o) => selectEl.appendChild(new Option(o.text, o.value)));
   }
 
   function show(el, visible) {
@@ -93,13 +117,38 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!selectEl) return;
     try {
       const cat = await cargarCatalogo(grupo);
-      addOptions(selectEl, cat.map(x => ({ value: x.valor, text: x.valor })), { firstText, firstValue });
+      addOptions(selectEl, cat.map((x) => ({ value: x.valor, text: x.valor })), { firstText, firstValue });
     } catch {
       addOptions(selectEl, [], { firstText: "(Sin catálogo)", firstValue: "" });
     }
   }
 
-  // “OTRO” con catálogo + escribir
+  // ✅ Un solo select con opción "Escribir nuevo..." => muestra input "¿Cuál?"
+  function initSelectConEscribirNuevo(selectEl, inputEl) {
+    if (!selectEl) return;
+
+    function sync() {
+      const wantsWrite = selectEl.value === "__write__";
+      if (inputEl) {
+        inputEl.style.display = wantsWrite ? "" : "none";
+        if (!wantsWrite) inputEl.value = "";
+      }
+    }
+
+    selectEl.addEventListener("change", sync);
+    sync();
+  }
+
+  function leerSelectOEscribir(selectEl, inputEl) {
+    if (!selectEl) return null;
+    const v = selectEl.value || "";
+    if (!v) return null;
+    if (v !== "__write__") return v;
+    const txt = (inputEl?.value || "").trim();
+    return txt || null;
+  }
+
+  // Tiempo servicio (catálogo + escribir)
   async function initOtroCatalogo({ grupoCatalogo, selectCatalogoEl, inputTextoEl }) {
     if (!selectCatalogoEl) return;
 
@@ -107,17 +156,16 @@ document.addEventListener("DOMContentLoaded", () => {
       const cat = await cargarCatalogo(grupoCatalogo);
 
       const opts = [
-        ...cat.map(x => ({ value: x.valor, text: x.valor })),
-        { value: "__write__", text: "Escribir nuevo..." }
+        ...cat.map((x) => ({ value: x.valor, text: x.valor })),
+        { value: "__write__", text: "Escribir nuevo..." },
       ];
 
       addOptions(selectCatalogoEl, opts, { firstText: "(Elegir de catálogo)", firstValue: "" });
     } catch {
-      addOptions(
-        selectCatalogoEl,
-        [{ value: "__write__", text: "Escribir nuevo..." }],
-        { firstText: "(Elegir de catálogo)", firstValue: "" }
-      );
+      addOptions(selectCatalogoEl, [{ value: "__write__", text: "Escribir nuevo..." }], {
+        firstText: "(Elegir de catálogo)",
+        firstValue: "",
+      });
     }
 
     function syncWrite() {
@@ -139,23 +187,54 @@ document.addEventListener("DOMContentLoaded", () => {
     return txt || null;
   }
 
+  // ✅ para selects de catálogo con "Escribir nuevo..."
+  async function fillSelectCatalogoConEscribir(selectEl, inputEl, grupoCatalogo, { firstText, firstValue } = {}) {
+    if (!selectEl) return;
+
+    const firstT = firstText ?? "(Seleccionar)";
+    const firstV = firstValue ?? "";
+
+    try {
+      const cat = await cargarCatalogo(grupoCatalogo);
+      const opts = [
+        ...cat.map((x) => ({ value: x.valor, text: x.valor })),
+        { value: "__write__", text: "Escribir nuevo..." },
+      ];
+      addOptions(selectEl, opts, { firstText: firstT, firstValue: firstV });
+    } catch {
+      addOptions(selectEl, [{ value: "__write__", text: "Escribir nuevo..." }], {
+        firstText: "(Sin catálogo)",
+        firstValue: "",
+      });
+    }
+
+    initSelectConEscribirNuevo(selectEl, inputEl);
+  }
+
   function recalcularTotal() {
     let total = 0;
     items.forEach((it) => {
+      if (it.es_opcional) return; // ✅ no sumar opcionales
       const p = Number(it.precio);
       if (!Number.isNaN(p) && p > 0) total += p;
     });
     if (totalUsdInput) totalUsdInput.value = total.toFixed(2);
   }
 
-  // ====== Fechas ======
-  const MESES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+  // ==========================
+  // Fechas
+  // ==========================
+  const MESES = [
+    "enero","febrero","marzo","abril","mayo","junio",
+    "julio","agosto","septiembre","octubre","noviembre","diciembre",
+  ];
   const DIAS_SEMANA = ["domingo","lunes","martes","miércoles","jueves","viernes","sábado"];
 
   function parseYMD(ymd) {
-    const [y, m, d] = ymd.split("-").map(Number);
-    return new Date(y, m - 1, d);
+    const [y, m, d] = String(ymd || "").split("-").map(Number);
+    return new Date(y, (m || 1) - 1, d || 1);
   }
+
   function sumarDiasYmd(ymd, dias) {
     const d = parseYMD(ymd);
     d.setDate(d.getDate() + dias);
@@ -164,6 +243,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const day = String(d.getDate()).padStart(2, "0");
     return `${y}-${m}-${day}`;
   }
+
   function formatoRangoAlojamiento(desdeYmd, hastaYmd) {
     const d1 = parseYMD(desdeYmd);
     const d2 = parseYMD(hastaYmd);
@@ -178,6 +258,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (anio1 === anio2) return `${dia1} de ${mes1} a ${dia2} de ${mes2} de ${anio1}`;
     return `${dia1} de ${mes1} de ${anio1} a ${dia2} de ${mes2} de ${anio2}`;
   }
+
   function formatoFechaServicio(fechaYmd) {
     const d = parseYMD(fechaYmd);
     const diaSemana = DIAS_SEMANA[d.getDay()];
@@ -196,22 +277,83 @@ document.addEventListener("DOMContentLoaded", () => {
     return t.includes("vuelo") || t.includes("tren");
   }
 
+  // ==========================
+  // ✅ Filtro fuerte por noches (solo alojamiento)
+  // ==========================
+  let nochesFiltroAloj = null;
+
+  function calcularNoches(desdeYmd, hastaYmd) {
+    if (!desdeYmd || !hastaYmd) return null;
+    const d1 = parseYMD(desdeYmd);
+    const d2 = parseYMD(hastaYmd);
+    const diffMs = d2 - d1;
+    const diffDias = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    return diffDias;
+  }
+
+  function esTipoAlojamientoSeleccionado() {
+    const opt = filtroTipoServicio?.options?.[filtroTipoServicio.selectedIndex];
+    if (!opt) return false;
+    return opt.textContent.toLowerCase().includes("aloj");
+  }
+
+  function actualizarNochesYFiltrarServicios() {
+    if (!esTipoAlojamientoSeleccionado()) {
+      nochesFiltroAloj = null;
+      return;
+    }
+
+    const desde = fechaDesdeInput?.value;
+    const hasta = fechaHastaInput?.value;
+
+    if (!desde || !hasta) {
+      nochesFiltroAloj = null;
+      filtrarServicios();
+      return;
+    }
+
+    const noches = calcularNoches(desde, hasta);
+
+    if (!Number.isFinite(noches) || noches < 1) {
+      nochesFiltroAloj = null;
+      mostrarError("En alojamiento, la fecha hasta debe ser posterior a la fecha desde (mínimo 1 noche).");
+      filtrarServicios();
+      return;
+    }
+
+    mostrarError("");
+    nochesFiltroAloj = noches;
+    filtrarServicios();
+  }
+
+  // ==========================
+  // ✅ Servicio texto robusto (para cotización)
+  // ==========================
+  function getServicioTextoFromRow(row) {
+    const direct = (row?.servicio_texto || "").trim();
+    if (direct) return direct;
+
+    const idSrv = row?.id_servicio != null ? String(row.id_servicio) : null;
+    if (idSrv && servicioTextoById.has(idSrv)) return servicioTextoById.get(idSrv);
+
+    const alt =
+      (row?.nombre_servicio || "").trim() ||
+      (row?.nombre_wtravel || "").trim() ||
+      (row?.nombre || "").trim();
+
+    return alt || "";
+  }
+
+  // ==========================
+  // Mapeo items cotización
+  // ==========================
   function mapRowToItem(row) {
     const tipo = row.tipo_servicio || "";
     const esAlojamiento = esTipoAlojamientoTexto(tipo);
 
     const fechaYmd = String(row.fecha_servicio).substring(0, 10);
-    let fechaTexto;
+    const servicioTexto = getServicioTextoFromRow(row);
 
-    if (esAlojamiento && row.noches_alojamiento && row.noches_alojamiento > 0) {
-      const desde = fechaYmd;
-      const hasta = sumarDiasYmd(desde, row.noches_alojamiento - 1);
-      fechaTexto = formatoRangoAlojamiento(desde, hasta);
-    } else {
-      fechaTexto = formatoFechaServicio(fechaYmd);
-    }
-
-    const servicioTexto = row.servicio_texto || row.nombre_servicio || "";
     let precio = row.precio_usd;
     if (esTipoSinPrecio(tipo)) precio = null;
 
@@ -222,9 +364,11 @@ document.addEventListener("DOMContentLoaded", () => {
       ciudad: row.ciudad,
       tipo_servicio: row.tipo_servicio,
       esAlojamiento,
-      fecha: fechaTexto,
+      fechaYmd, // ✅ clave
+      noches_alojamiento: row.noches_alojamiento ?? null,
       servicioTexto,
-      precio
+      precio,
+      es_opcional: Number(row.es_opcional) === 1,
     };
   }
 
@@ -232,19 +376,37 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!idCotizacion) return;
     try {
       const payload = {
-        orden: items.map((it, index) => ({ id_item: it.id_item, orden_dia: index + 1 }))
+        orden: items.map((it, index) => ({ id_item: it.id_item, orden_dia: index + 1 })),
       };
 
       const resp = await fetch(`/api/cotizaciones/${idCotizacion}/items/orden`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
       });
 
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok || !data.ok) console.warn("No se pudo guardar el orden:", data.mensaje || data.error || "Error");
     } catch (err) {
       console.error("Error guardando orden:", err);
+    }
+  }
+
+  // ✅ Persistir fecha del item (requiere backend: PUT /api/cotizaciones/items/:id_item/fecha)
+  async function guardarFechaItemEnBackend(idItem, fechaYmd) {
+    if (!idItem) return;
+    try {
+      const resp = await fetch(`/api/cotizaciones/items/${idItem}/fecha`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fecha_servicio: fechaYmd }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || !data.ok) {
+        console.warn("No se pudo guardar la fecha:", data.mensaje || data.error || "Error");
+      }
+    } catch (err) {
+      console.error("Error guardando fecha:", err);
     }
   }
 
@@ -290,14 +452,24 @@ document.addEventListener("DOMContentLoaded", () => {
       colIndice.classList.add("celda-indice");
       colIndice.textContent = idx + 1;
 
+      // ✅ Fecha se recalcula desde fechaYmd
       const colFecha = document.createElement("td");
-      colFecha.textContent = it.fecha || "";
+      if (it.esAlojamiento && it.noches_alojamiento && Number(it.noches_alojamiento) > 0) {
+        const desde = it.fechaYmd;
+        const hasta = sumarDiasYmd(desde, Number(it.noches_alojamiento));
+        colFecha.textContent = formatoRangoAlojamiento(desde, hasta);
+      } else {
+        colFecha.textContent = it.fechaYmd ? formatoFechaServicio(it.fechaYmd) : "";
+      }
 
       const colServicio = document.createElement("td");
       colServicio.textContent = it.servicioTexto || "";
 
       const colPrecio = document.createElement("td");
-      if (it.precio != null && it.precio !== "") {
+      // ✅ Si es opcional, no mostrar precio
+      if (it.es_opcional) {
+        colPrecio.textContent = "-";
+      } else if (it.precio != null && it.precio !== "") {
         const num = Number(it.precio);
         colPrecio.textContent = Number.isNaN(num) ? String(it.precio) : num.toFixed(2);
       } else {
@@ -325,14 +497,50 @@ document.addEventListener("DOMContentLoaded", () => {
     recalcularTotal();
   }
 
+  // ✅ Mover: swap + mover fecha del item movido (+/-1 día) + persistir fecha + persistir orden
   async function moverItem(idx, delta) {
-    const newIndex = idx + delta;
-    if (newIndex < 0 || newIndex >= items.length) return;
-    const tmp = items[idx];
-    items[idx] = items[newIndex];
-    items[newIndex] = tmp;
+    if (idx < 0 || idx >= items.length) return;
+
+    const moved = items[idx];
+    if (!moved || !moved.fechaYmd) return;
+
+    // 1) Cambiar fecha (siempre)
+    const nuevaFecha = sumarDiasYmd(moved.fechaYmd, delta);
+    moved.fechaYmd = nuevaFecha;
+
+    // 2) Guardar fecha en backend (siempre)
+    await guardarFechaItemEnBackend(moved.id_item, moved.fechaYmd);
+
+    // 3) Regla: solo cambiar índice si cruza con el vecino
+    let swapped = false;
+
+    if (delta === -1 && idx > 0) {
+      const prev = items[idx - 1];
+      // Si al subir queda ANTES que la fecha del anterior → sí swap
+      if (prev?.fechaYmd && moved.fechaYmd < prev.fechaYmd) {
+        items[idx] = prev;
+        items[idx - 1] = moved;
+        swapped = true;
+      }
+    }
+
+    if (delta === +1 && idx < items.length - 1) {
+      const next = items[idx + 1];
+      // Si al bajar queda DESPUÉS que la fecha del siguiente → sí swap
+      if (next?.fechaYmd && moved.fechaYmd > next.fechaYmd) {
+        items[idx] = next;
+        items[idx + 1] = moved;
+        swapped = true;
+      }
+    }
+
+    // 4) Repintar
     actualizarTablaDesdeEstado();
-    await guardarOrdenEnBackend();
+
+    // 5) Solo guardar orden si realmente cambió el índice
+    if (swapped) {
+      await guardarOrdenEnBackend();
+    }
   }
 
   async function eliminarItem(it, index) {
@@ -351,7 +559,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // ===== Ubicaciones =====
+  // ==========================
+  // Ubicaciones
+  // ==========================
   async function cargarContinentes() {
     try {
       const lista = await fetchLista("/api/continentes", ["continentes"]);
@@ -412,7 +622,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
   filtroCiudad?.addEventListener("change", () => filtrarServicios());
 
-  // ===== Tipos =====
+  // ==========================
+  // Tipos
+  // ==========================
   async function cargarTiposServicio() {
     try {
       const lista = await fetchLista("/api/tiposervicio", ["tipos", "tipos_servicio", "tiposervicio"]);
@@ -425,34 +637,59 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  function esTipoAlojamientoSeleccionado() {
-    const opt = filtroTipoServicio?.options?.[filtroTipoServicio.selectedIndex];
-    if (!opt) return false;
-    return opt.textContent.toLowerCase().includes("aloj");
-  }
-
   function actualizarVisibilidadFechaHasta() {
     if (!wrapperFechaHasta || !fechaHastaInput) return;
-    if (esTipoAlojamientoSeleccionado()) wrapperFechaHasta.style.display = "";
-    else { wrapperFechaHasta.style.display = "none"; fechaHastaInput.value = ""; }
+
+    if (esTipoAlojamientoSeleccionado()) {
+      wrapperFechaHasta.style.display = "";
+    } else {
+      wrapperFechaHasta.style.display = "none";
+      fechaHastaInput.value = "";
+      nochesFiltroAloj = null;
+    }
   }
 
   filtroTipoServicio?.addEventListener("change", () => {
     actualizarVisibilidadFechaHasta();
+    actualizarNochesYFiltrarServicios();
     filtrarServicios();
     renderCamposDinamicosPorTipo();
   });
 
-  // ===== Servicios =====
+  fechaDesdeInput?.addEventListener("change", () => {
+    if (esTipoAlojamientoSeleccionado()) actualizarNochesYFiltrarServicios();
+  });
+  fechaHastaInput?.addEventListener("change", () => {
+    if (esTipoAlojamientoSeleccionado()) actualizarNochesYFiltrarServicios();
+  });
+
+  // ==========================
+  // Servicios
+  // ==========================
   async function cargarTodosLosServicios() {
     try {
       const lista = await fetchLista("/api/servicios", ["servicios"]);
       allServicios = lista;
+
+      // ✅ refresca mapa id -> servicio_texto
+      servicioTextoById = new Map(
+        (allServicios || []).map((s) => [
+          String(s.id),
+          (s.servicio_texto || "").trim() ||
+            (s.nombre_wtravel || "").trim() ||
+            `Servicio #${s.id}`,
+        ])
+      );
+
       filtrarServicios();
     } catch (err) {
       console.error("Error cargando servicios", err);
       mostrarError("No se pudieron cargar los servicios: " + err.message);
     }
+  }
+
+  function labelServicio(s) {
+    return (s.servicio_texto || "").trim() || s.nombre_wtravel || `Servicio #${s.id}`;
   }
 
   function filtrarServicios() {
@@ -466,78 +703,19 @@ document.addEventListener("DOMContentLoaded", () => {
       if (idPais && String(s.id_pais ?? "") !== String(idPais)) return false;
       if (idCiud && String(s.id_ciudad ?? "") !== String(idCiud)) return false;
       if (idTipo && String(s.id_tipo ?? "") !== String(idTipo)) return false;
+
+      if (esTipoAlojamientoSeleccionado() && nochesFiltroAloj != null) {
+        const n = Number(
+          s.aloj_noches ?? s.noches ?? s.noches_alojamiento ?? s.alojamiento_noches
+        );
+        if (!Number.isFinite(n) || n !== nochesFiltroAloj) return false;
+      }
+
       return true;
     });
 
     rellenarSelectServicios();
-  }
-
-  function capSentence(s) {
-    s = String(s || "").trim().toLowerCase();
-    if (!s) return "";
-    return s.charAt(0).toUpperCase() + s.slice(1);
-  }
-
-  function prettyCategoriaHotel(code) {
-    const c = String(code || "").toUpperCase();
-    const map = {
-      H3_ECONOMICO: "hotel 3 estrellas económico",
-      H3_SUPERIOR: "hotel 3 estrellas superior",
-      H4_ECONOMICO: "hotel 4 estrellas económico",
-      H4_SUPERIOR: "hotel 4 estrellas superior",
-      H5_ECONOMICO: "hotel 5 estrellas económico",
-      H5_SUPERIOR: "hotel 5 estrellas superior",
-    };
-    return map[c] || capSentence(c.replaceAll("_", " "));
-  }
-
-  function prettyCategoriaHab(code) {
-    const c = String(code || "").toUpperCase();
-    const map = {
-      ESTANDAR: "habitación estándar",
-      STANDARD: "habitación estándar",
-      SUITE: "habitación suite",
-      SUPERIOR: "habitación superior",
-    };
-    return map[c] || ("habitación " + capSentence(c.replaceAll("_", " ")));
-  }
-
-  function prettyRegimen(code) {
-    const c = String(code || "").toUpperCase();
-    const map = {
-      ALOJAMIENTO_DESAYUNO: "desayuno diario",
-      SOLO_ALOJAMIENTO: "solo alojamiento",
-      MEDIA_PENSION: "media pensión",
-      PENSION_COMPLETA: "pensión completa",
-      TODO_INCLUIDO: "todo incluido",
-    };
-    return map[c] || capSentence(c.replaceAll("_", " "));
-  }
-
-  function nochesTxt(n) {
-    const x = Number(n || 0);
-    if (!Number.isFinite(x) || x <= 0) return "";
-    return x === 1 ? "1 noche" : `${x} noches`;
-  }
-
-  function labelServicio(s) {
-    const tipo = String(s.tipo_servicio || s.tipo || s.nombre_tipo || "").toLowerCase();
-
-    // Si es alojamiento, intentamos armar el texto bonito con campos de alojamiento
-    if (tipo.includes("aloj")) {
-      const partes = [
-        nochesTxt(s.noches),
-        prettyCategoriaHotel(s.categoria_hotel),
-        prettyCategoriaHab(s.categoria_hab),
-        prettyRegimen(s.regimen),
-      ].filter(Boolean);
-
-      // Si logramos armar algo con info real, lo usamos
-      if (partes.length >= 2) return partes.join(", ");
-    }
-
-    // Fallback
-    return s.servicio_texto || s.nombre_wtravel || `Servicio #${s.id}`;
+    if (selectServicio) selectServicio.value = "";
   }
 
   function rellenarSelectServicios() {
@@ -551,11 +729,18 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // ===== Mini-form =====
+  // ==========================
+  // Mini-form (Crear servicio rápido)
+  // ==========================
   btnToggleCrear?.addEventListener("click", () => {
     const visible = window.getComputedStyle(panelCrear).display !== "none";
     panelCrear.style.display = visible ? "none" : "block";
     msgCrear("");
+
+    if (inpNombreAutoPreview) {
+      inpNombreAutoPreview.value = "Se genera automáticamente al guardar";
+    }
+
     renderCamposDinamicosPorTipo();
   });
 
@@ -568,7 +753,9 @@ document.addEventListener("DOMContentLoaded", () => {
     try {
       const lista = await fetchLista("/api/proveedores", ["proveedores"]);
       selProveedorNuevo.innerHTML = "";
-      lista.forEach((p) => selProveedorNuevo.appendChild(new Option(`${p.nombre} (${p.iniciales || ""})`, p.id)));
+      lista.forEach((p) =>
+        selProveedorNuevo.appendChild(new Option(`${p.nombre} (${p.iniciales || ""})`, p.id))
+      );
     } catch (e) {
       console.error("Error cargando proveedores", e);
     }
@@ -577,184 +764,242 @@ document.addEventListener("DOMContentLoaded", () => {
   let _miniFormInited = false;
 
   function ocultarTodasLasSecciones() {
-    ["sec-alojamiento","sec-boleto","sec-vuelo","sec-tren","sec-traslado","sec-tour"]
-      .forEach(id => show(document.getElementById(id), false));
+    ["sec-alojamiento", "sec-boleto", "sec-vuelo", "sec-tren", "sec-traslado", "sec-tour"].forEach((id) =>
+      show(document.getElementById(id), false)
+    );
   }
 
-  function initMiniFormOnce() {
+  async function initMiniFormOnce() {
     if (_miniFormInited) return;
     _miniFormInited = true;
 
-    // =============================
-    // ✅ DATOS GENERALES: TIEMPO (select + otro)
-    // =============================
-    initOtroCatalogo({
+    await initOtroCatalogo({
       grupoCatalogo: "tiempo_servicio",
       selectCatalogoEl: selTiempoServicio,
-      inputTextoEl: txtTiempoServicio
+      inputTextoEl: txtTiempoServicio,
     });
 
     // ===== ALOJAMIENTO =====
-    addOptions(document.getElementById("aloj-regimen"), [
-      { value: "SOLO_ALOJAMIENTO", text: "Solo alojamiento" },
-      { value: "ALOJAMIENTO_DESAYUNO", text: "Alojamiento y desayuno" },
-      { value: "MEDIA_PENSION", text: "Media pensión" },
-      { value: "PENSION_COMPLETA", text: "Pensión completa" },
-      { value: "TODO_INCLUIDO", text: "Todo incluido" },
-      { value: "OTRO", text: "OTRO (especificar)" }
-    ], { firstText: "(Seleccionar)", firstValue: "" });
+    addOptions(
+      document.getElementById("aloj-regimen"),
+      [
+        { value: "SOLO_ALOJAMIENTO", text: "Solo alojamiento" },
+        { value: "ALOJAMIENTO_DESAYUNO", text: "Alojamiento y desayuno" },
+        { value: "MEDIA_PENSION", text: "Media pensión" },
+        { value: "PENSION_COMPLETA", text: "Pensión completa" },
+        { value: "TODO_INCLUIDO", text: "Todo incluido" },
+        { value: "__write__", text: "Escribir nuevo..." },
+      ],
+      { firstText: "(Seleccionar)", firstValue: "" }
+    );
 
-    addOptions(document.getElementById("aloj-categoria-hotel"), [
-      { value: "H3_ECONOMICO", text: "3* Económico" },
-      { value: "H3_SUPERIOR", text: "3* Superior" },
-      { value: "H4_ECONOMICO", text: "4* Económico" },
-      { value: "H4_SUPERIOR", text: "4* Superior" },
-      { value: "H5_ECONOMICO", text: "5* Económico" },
-      { value: "H5_SUPERIOR", text: "5* Superior" },
-      { value: "LUJO_ECONOMICO", text: "Lujo Económico" },
-      { value: "LUJO_SUPERIOR", text: "Lujo Superior" },
-      { value: "OTRO", text: "OTRO (especificar)" }
-    ], { firstText: "(Seleccionar)", firstValue: "" });
+    addOptions(
+      document.getElementById("aloj-categoria-hotel"),
+      [
+        { value: "H3_ECONOMICO", text: "3* Económico" },
+        { value: "H3_SUPERIOR", text: "3* Superior" },
+        { value: "H4_ECONOMICO", text: "4* Económico" },
+        { value: "H4_SUPERIOR", text: "4* Superior" },
+        { value: "H5_ECONOMICO", text: "5* Económico" },
+        { value: "H5_SUPERIOR", text: "5* Superior" },
+        { value: "LUJO_ECONOMICO", text: "Lujo Económico" },
+        { value: "LUJO_SUPERIOR", text: "Lujo Superior" },
+        { value: "__write__", text: "Escribir nuevo..." },
+      ],
+      { firstText: "(Seleccionar)", firstValue: "" }
+    );
 
-    addOptions(document.getElementById("aloj-categoria-hab"), [
-      { value: "ESTANDAR", text: "Estándar" },
-      { value: "SUPERIOR", text: "Superior" },
-      { value: "SUITE", text: "Suite" },
-      { value: "OTRO", text: "OTRO (especificar)" }
-    ], { firstText: "(Seleccionar)", firstValue: "" });
+    addOptions(
+      document.getElementById("aloj-categoria-hab"),
+      [
+        { value: "ESTANDAR", text: "Estándar" },
+        { value: "SUPERIOR", text: "Superior" },
+        { value: "SUITE", text: "Suite" },
+        { value: "__write__", text: "Escribir nuevo..." },
+      ],
+      { firstText: "(Seleccionar)", firstValue: "" }
+    );
 
-    initOtroCatalogo({ grupoCatalogo: "aloj_regimen_otro", selectCatalogoEl: document.getElementById("aloj-regimen-otro-select"), inputTextoEl: document.getElementById("aloj-regimen-otro-txt") });
-    initOtroCatalogo({ grupoCatalogo: "aloj_categoria_hotel_otro", selectCatalogoEl: document.getElementById("aloj-categoria-hotel-otro-select"), inputTextoEl: document.getElementById("aloj-categoria-hotel-otro-txt") });
-    initOtroCatalogo({ grupoCatalogo: "aloj_categoria_hab_otro", selectCatalogoEl: document.getElementById("aloj-categoria-hab-otro-select"), inputTextoEl: document.getElementById("aloj-categoria-hab-otro-txt") });
-
-    const selReg = document.getElementById("aloj-regimen");
-    const selCatHotel = document.getElementById("aloj-categoria-hotel");
-    const selCatHab = document.getElementById("aloj-categoria-hab");
-    function syncAlojUI() {
-      show(document.getElementById("wrap-aloj-regimen-otro"), selReg?.value === "OTRO");
-      show(document.getElementById("wrap-aloj-cat-hotel-otro"), selCatHotel?.value === "OTRO");
-      show(document.getElementById("wrap-aloj-cat-hab-otro"), selCatHab?.value === "OTRO");
-    }
-    selReg?.addEventListener("change", syncAlojUI);
-    selCatHotel?.addEventListener("change", syncAlojUI);
-    selCatHab?.addEventListener("change", syncAlojUI);
-    syncAlojUI();
+    initSelectConEscribirNuevo(document.getElementById("aloj-regimen"), document.getElementById("aloj-regimen-txt"));
+    initSelectConEscribirNuevo(
+      document.getElementById("aloj-categoria-hotel"),
+      document.getElementById("aloj-categoria-hotel-txt")
+    );
+    initSelectConEscribirNuevo(
+      document.getElementById("aloj-categoria-hab"),
+      document.getElementById("aloj-categoria-hab-txt")
+    );
 
     // ===== BOLETO =====
-    addOptions(document.getElementById("be-tipo-entrada"), [
-      { value: "ESTANDAR", text: "Estándar" },
-      { value: "VIP", text: "VIP" },
-      { value: "FAST_TRACK", text: "Fast track" },
-      { value: "OTRA", text: "OTRA (especificar)" }
-    ], { firstText: "(Seleccionar tipo)", firstValue: "" });
+    addOptions(
+      document.getElementById("be-tipo-entrada"),
+      [
+        { value: "ESTANDAR", text: "Estándar" },
+        { value: "VIP", text: "VIP" },
+        { value: "FAST_TRACK", text: "Fast track" },
+        { value: "__write__", text: "Escribir nuevo..." },
+      ],
+      { firstText: "(Seleccionar tipo)", firstValue: "" }
+    );
+    initSelectConEscribirNuevo(
+      document.getElementById("be-tipo-entrada"),
+      document.getElementById("be-tipo-entrada-txt")
+    );
 
-    initOtroCatalogo({ grupoCatalogo: "boleto_tipo_entrada_otro", selectCatalogoEl: document.getElementById("be-tipo-otra-select"), inputTextoEl: document.getElementById("be-tipo-otra-txt") });
-
-    // ✅ Lugar boleto: select + otro
-    initOtroCatalogo({
+    await initOtroCatalogo({
       grupoCatalogo: "boleto_lugar",
       selectCatalogoEl: document.getElementById("be-lugar-select"),
-      inputTextoEl: document.getElementById("be-lugar-txt")
+      inputTextoEl: document.getElementById("be-lugar-txt"),
     });
 
-    // Idiomas (select desde BD)
-    fillSelectFromCatalog(document.getElementById("be-idioma"), "idiomas", { firstText: "(Seleccionar idioma)", firstValue: "" });
+    await fillSelectCatalogoConEscribir(
+      document.getElementById("be-idioma"),
+      document.getElementById("be-idioma-txt"),
+      "idiomas",
+      { firstText: "(Seleccionar idioma)", firstValue: "" }
+    );
 
-    const selBeTipo = document.getElementById("be-tipo-entrada");
-    function syncBoletoUI() { show(document.getElementById("wrap-be-tipo-otra"), selBeTipo?.value === "OTRA"); }
-    selBeTipo?.addEventListener("change", syncBoletoUI);
-    syncBoletoUI();
+    addOptions(
+      document.getElementById("be-tipo-guia"),
+      [
+        { value: "GUIA", text: "Guía" },
+        { value: "AUDIOGUIA", text: "Audioguía" },
+        { value: "NINGUNO", text: "Ninguno" },
+        { value: "__write__", text: "Escribir nuevo..." },
+      ],
+      { firstText: "(Seleccionar)", firstValue: "" }
+    );
+    initSelectConEscribirNuevo(document.getElementById("be-tipo-guia"), document.getElementById("be-tipo-guia-txt"));
 
-    // ===== VUELO (TODO SELECT desde catálogo + escalas fijo) =====
-    fillSelectFromCatalog(document.getElementById("vu-origen"), "vuelo_origen", { firstText: "(Seleccionar)", firstValue: "" });
-    fillSelectFromCatalog(document.getElementById("vu-destino"), "vuelo_destino", { firstText: "(Seleccionar)", firstValue: "" });
-    fillSelectFromCatalog(document.getElementById("vu-clase"), "vuelo_clase", { firstText: "(Seleccionar)", firstValue: "" });
-    fillSelectFromCatalog(document.getElementById("vu-equipaje"), "vuelo_equipaje", { firstText: "(Seleccionar)", firstValue: "" });
+    // ===== VUELO =====
+    await fillSelectCatalogoConEscribir(
+      document.getElementById("vu-origen"),
+      document.getElementById("vu-origen-txt"),
+      "vuelo_origen",
+      { firstText: "(Seleccionar)", firstValue: "" }
+    );
+
+    await fillSelectFromCatalog(document.getElementById("vu-destino"), "vuelo_destino", {
+      firstText: "(Seleccionar)",
+      firstValue: "",
+    });
+
+    await fillSelectFromCatalog(document.getElementById("vu-clase"), "vuelo_clase", {
+      firstText: "(Seleccionar)",
+      firstValue: "",
+    });
+
+    await fillSelectFromCatalog(document.getElementById("vu-equipaje"), "vuelo_equipaje", {
+      firstText: "(Seleccionar)",
+      firstValue: "",
+    });
 
     const selVuEsc = document.getElementById("vu-escalas");
     if (selVuEsc) {
-      addOptions(selVuEsc, [0,1,2,3].map(n => ({ value: String(n), text: String(n) })), { firstText: "(Seleccionar)", firstValue: "" });
+      addOptions(
+        selVuEsc,
+        [0, 1, 2, 3].map((n) => ({ value: String(n), text: String(n) })),
+        { firstText: "(Seleccionar)", firstValue: "" }
+      );
     }
 
-    // ===== TREN (TODO SELECT desde catálogo + escalas fijo) =====
-    fillSelectFromCatalog(document.getElementById("tr-origen"), "tren_origen", { firstText: "(Seleccionar)", firstValue: "" });
-    fillSelectFromCatalog(document.getElementById("tr-destino"), "tren_destino", { firstText: "(Seleccionar)", firstValue: "" });
-    fillSelectFromCatalog(document.getElementById("tr-clase"), "tren_clase", { firstText: "(Seleccionar)", firstValue: "" });
-    fillSelectFromCatalog(document.getElementById("tr-equipaje"), "tren_equipaje", { firstText: "(Seleccionar)", firstValue: "" });
+    // ===== TREN =====
+    await fillSelectCatalogoConEscribir(
+      document.getElementById("tr-origen"),
+      document.getElementById("tr-origen-txt"),
+      "tren_origen",
+      { firstText: "(Seleccionar)", firstValue: "" }
+    );
+
+    await fillSelectFromCatalog(document.getElementById("tr-destino"), "tren_destino", {
+      firstText: "(Seleccionar)",
+      firstValue: "",
+    });
+
+    await fillSelectFromCatalog(document.getElementById("tr-clase"), "tren_clase", {
+      firstText: "(Seleccionar)",
+      firstValue: "",
+    });
+
+    await fillSelectFromCatalog(document.getElementById("tr-equipaje"), "tren_equipaje", {
+      firstText: "(Seleccionar)",
+      firstValue: "",
+    });
 
     const selTrEsc = document.getElementById("tr-escalas");
     if (selTrEsc) {
-      addOptions(selTrEsc, [0,1,2,3].map(n => ({ value: String(n), text: String(n) })), { firstText: "(Seleccionar)", firstValue: "" });
+      addOptions(
+        selTrEsc,
+        [0, 1, 2, 3].map((n) => ({ value: String(n), text: String(n) })),
+        { firstText: "(Seleccionar)", firstValue: "" }
+      );
     }
 
     // ===== TRASLADO =====
-    addOptions(document.getElementById("tr-tipo"), [
-      { value: "AEROPUERTO_HOTEL", text: "Aeropuerto → Hotel" },
-      { value: "HOTEL_AEROPUERTO", text: "Hotel → Aeropuerto" },
-      { value: "ESTACION_HOTEL", text: "Estación → Hotel" },
-      { value: "HOTEL_ESTACION", text: "Hotel → Estación" },
-      { value: "PUERTO_HOTEL", text: "Puerto → Hotel" },
-      { value: "HOTEL_PUERTO", text: "Hotel → Puerto" },
-      { value: "HOTEL_HOTEL", text: "Hotel → Hotel" },
-      { value: "OTRO", text: "OTRO (especificar)" }
-    ], { firstText: "(Seleccionar)", firstValue: "" });
+    addOptions(
+      document.getElementById("tr-tipo"),
+      [
+        { value: "AEROPUERTO_HOTEL", text: "Aeropuerto → Hotel" },
+        { value: "HOTEL_AEROPUERTO", text: "Hotel → Aeropuerto" },
+        { value: "ESTACION_HOTEL", text: "Estación → Hotel" },
+        { value: "HOTEL_ESTACION", text: "Hotel → Estación" },
+        { value: "PUERTO_HOTEL", text: "Puerto → Hotel" },
+        { value: "HOTEL_PUERTO", text: "Hotel → Puerto" },
+        { value: "HOTEL_HOTEL", text: "Hotel → Hotel" },
+        { value: "__write__", text: "Escribir nuevo..." },
+      ],
+      { firstText: "(Seleccionar)", firstValue: "" }
+    );
+    initSelectConEscribirNuevo(document.getElementById("tr-tipo"), document.getElementById("tr-tipo-otro"));
 
-    addOptions(document.getElementById("tr-vehiculo"), [
-      { value: "SEDAN", text: "Sedán" },
-      { value: "VAN", text: "Van" },
-      { value: "MINIBUS", text: "Minibús" },
-      { value: "BUS", text: "Bus" },
-      { value: "OTRO", text: "OTRO (especificar)" }
-    ], { firstText: "(Seleccionar)", firstValue: "" });
+    addOptions(
+      document.getElementById("tr-vehiculo"),
+      [
+        { value: "SEDAN", text: "Sedán" },
+        { value: "VAN", text: "Van" },
+        { value: "MINIBUS", text: "Minibús" },
+        { value: "BUS", text: "Bus" },
+        { value: "__write__", text: "Escribir nuevo..." },
+      ],
+      { firstText: "(Seleccionar)", firstValue: "" }
+    );
+    initSelectConEscribirNuevo(document.getElementById("tr-vehiculo"), document.getElementById("tr-vehiculo-txt"));
 
-    // ✅ Origen/Destino traslado: select + otro
-    initOtroCatalogo({
+    await initOtroCatalogo({
       grupoCatalogo: "traslado_origen",
       selectCatalogoEl: document.getElementById("tr-origen-select"),
-      inputTextoEl: document.getElementById("tr-origen-txt")
+      inputTextoEl: document.getElementById("tr-origen-txt"),
     });
-    initOtroCatalogo({
+    await initOtroCatalogo({
       grupoCatalogo: "traslado_destino",
       selectCatalogoEl: document.getElementById("tr-destino-select"),
-      inputTextoEl: document.getElementById("tr-destino-txt")
+      inputTextoEl: document.getElementById("tr-destino-txt"),
     });
 
-    const selTrTipo = document.getElementById("tr-tipo");
-    const selTrVeh = document.getElementById("tr-vehiculo");
-    function syncTrasladoUI() {
-      show(document.getElementById("wrap-tr-tipo-otro"), selTrTipo?.value === "OTRO");
-      show(document.getElementById("wrap-tr-veh-otro"), selTrVeh?.value === "OTRO");
-    }
-    selTrTipo?.addEventListener("change", syncTrasladoUI);
-    selTrVeh?.addEventListener("change", syncTrasladoUI);
-    syncTrasladoUI();
-
     // ===== TOUR =====
-    addOptions(document.getElementById("tu-tipo-guia"), [
-      { value: "GUIA", text: "Guía" },
-      { value: "AUDIOGUIA", text: "Audioguía" },
-      { value: "CHOFER_GUIA", text: "Chofer-guía" },
-      { value: "OTRO", text: "OTRO (especificar)" }
-    ], { firstText: "(Seleccionar)", firstValue: "" });
+    addOptions(
+      document.getElementById("tu-tipo-guia"),
+      [
+        { value: "GUIA", text: "Guía" },
+        { value: "AUDIOGUIA", text: "Audioguía" },
+        { value: "CHOFER_GUIA", text: "Chofer-guía" },
+        { value: "__write__", text: "Escribir nuevo..." },
+      ],
+      { firstText: "(Seleccionar)", firstValue: "" }
+    );
+    initSelectConEscribirNuevo(document.getElementById("tu-tipo-guia"), document.getElementById("tu-tipo-guia-otro"));
 
-    // Idiomas (desde BD)
-    fillSelectFromCatalog(document.getElementById("tu-idioma"), "idiomas", { firstText: "(Seleccionar idioma)", firstValue: "" });
-
-    const selTuTipoGuia = document.getElementById("tu-tipo-guia");
-    const selTuIdioma = document.getElementById("tu-idioma");
-
-    function syncTourUI() {
-      show(document.getElementById("wrap-tu-tipo-guia-otro"), selTuTipoGuia?.value === "OTRO");
-      show(document.getElementById("wrap-tu-idioma-otro"), selTuIdioma?.value === "OTRO");
-    }
-    selTuTipoGuia?.addEventListener("change", syncTourUI);
-    selTuIdioma?.addEventListener("change", syncTourUI);
-    syncTourUI();
+    await fillSelectCatalogoConEscribir(
+      document.getElementById("tu-idioma"),
+      document.getElementById("tu-idioma-txt"),
+      "idiomas",
+      { firstText: "(Seleccionar idioma)", firstValue: "" }
+    );
   }
 
-  function renderCamposDinamicosPorTipo() {
+  async function renderCamposDinamicosPorTipo() {
     if (!contDinamico) return;
-    initMiniFormOnce();
+    await initMiniFormOnce();
     ocultarTodasLasSecciones();
 
     const opt = filtroTipoServicio?.options?.[filtroTipoServicio.selectedIndex];
@@ -765,10 +1010,13 @@ document.addEventListener("DOMContentLoaded", () => {
     if (tipoTexto.includes("vuelo")) return show(document.getElementById("sec-vuelo"), true);
     if (tipoTexto.includes("tren")) return show(document.getElementById("sec-tren"), true);
     if (tipoTexto.includes("trasl")) return show(document.getElementById("sec-traslado"), true);
-    if (tipoTexto.includes("excurs") || tipoTexto.includes("visita") || tipoTexto.includes("tour")) return show(document.getElementById("sec-tour"), true);
+    if (tipoTexto.includes("excurs") || tipoTexto.includes("visita") || tipoTexto.includes("tour"))
+      return show(document.getElementById("sec-tour"), true);
   }
 
-  // ===== Guardar servicio rápido =====
+  // ==========================
+  // Guardar servicio rápido
+  // ==========================
   btnGuardarSrv?.addEventListener("click", async () => {
     msgCrear("");
 
@@ -782,145 +1030,161 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const tiempoServicioFinal = leerValorOtro({
       selectCatalogoEl: selTiempoServicio,
-      inputTextoEl: txtTiempoServicio
+      inputTextoEl: txtTiempoServicio,
     });
 
     const payload = {
       id_tipo: Number(id_tipo),
       id_proveedor: Number(prov),
       id_ciudad: Number(id_ciudad),
-      nombre_wtravel: (inpNombreW?.value || "").trim(),
       tiempo_servicio: tiempoServicioFinal || null,
       privado: selPrivado?.value === "1",
       descripcion: (inpDesc?.value || "").trim() || null,
-      link_reserva: (inpLinkReserva?.value || "").trim() || null
+      link_reserva: (inpLinkReserva?.value || "").trim() || null,
     };
-
-    if (!payload.nombre_wtravel) return msgCrear("Falta el nombre WTravel.");
 
     const tipoTexto = (filtroTipoServicio?.options?.[filtroTipoServicio.selectedIndex]?.textContent || "").toLowerCase();
 
-    // Alojamiento
+    // ALOJAMIENTO
     if (tipoTexto.includes("aloj")) {
-      const regimen = document.getElementById("aloj-regimen")?.value || null;
-      const catHotel = document.getElementById("aloj-categoria-hotel")?.value || null;
-      const catHab = document.getElementById("aloj-categoria-hab")?.value || null;
+      const selReg = document.getElementById("aloj-regimen");
+      const selCatHotel = document.getElementById("aloj-categoria-hotel");
+      const selCatHab = document.getElementById("aloj-categoria-hab");
 
-      const regimenOtro = (regimen === "OTRO") ? leerValorOtro({
-        selectCatalogoEl: document.getElementById("aloj-regimen-otro-select"),
-        inputTextoEl: document.getElementById("aloj-regimen-otro-txt")
-      }) : null;
-
-      const catHotelOtro = (catHotel === "OTRO") ? leerValorOtro({
-        selectCatalogoEl: document.getElementById("aloj-categoria-hotel-otro-select"),
-        inputTextoEl: document.getElementById("aloj-categoria-hotel-otro-txt")
-      }) : null;
-
-      const catHabOtro = (catHab === "OTRO") ? leerValorOtro({
-        selectCatalogoEl: document.getElementById("aloj-categoria-hab-otro-select"),
-        inputTextoEl: document.getElementById("aloj-categoria-hab-otro-txt")
-      }) : null;
+      const regVal = leerSelectOEscribir(selReg, document.getElementById("aloj-regimen-txt"));
+      const catHotelVal = leerSelectOEscribir(selCatHotel, document.getElementById("aloj-categoria-hotel-txt"));
+      const catHabVal = leerSelectOEscribir(selCatHab, document.getElementById("aloj-categoria-hab-txt"));
 
       payload.alojamiento = {
         noches: Number(document.getElementById("aloj-noches")?.value || 1),
         habitaciones: Number(document.getElementById("aloj-habitaciones")?.value || 1),
-        regimen,
-        regimen_otro: regimenOtro,
-        categoria_hotel: catHotel,
-        categoria_hotel_otro: catHotelOtro,
-        categoria_hab: catHab,
-        categoria_hab_otro: catHabOtro
+
+        regimen: selReg?.value === "__write__" ? "OTRO" : selReg?.value || null,
+        regimen_otro: selReg?.value === "__write__" ? regVal : null,
+
+        categoria_hotel: selCatHotel?.value === "__write__" ? "OTRO" : selCatHotel?.value || null,
+        categoria_hotel_otro: selCatHotel?.value === "__write__" ? catHotelVal : null,
+
+        categoria_hab: selCatHab?.value === "__write__" ? "OTRO" : selCatHab?.value || null,
+        categoria_hab_otro: selCatHab?.value === "__write__" ? catHabVal : null,
       };
     }
 
-    // Boleto
+    // BOLETO
     if (tipoTexto.includes("boleto")) {
-      const tipoEntrada = document.getElementById("be-tipo-entrada")?.value || null;
-      let tipoEntradaOtro = null;
-      if (tipoEntrada === "OTRA") {
-        tipoEntradaOtro = leerValorOtro({
-          selectCatalogoEl: document.getElementById("be-tipo-otra-select"),
-          inputTextoEl: document.getElementById("be-tipo-otra-txt")
-        });
-      }
+      const tipoEntradaSel = document.getElementById("be-tipo-entrada");
+      const tipoEntradaTxt = document.getElementById("be-tipo-entrada-txt");
+      const tipoEntradaVal = leerSelectOEscribir(tipoEntradaSel, tipoEntradaTxt);
 
       const lugarFinal = leerValorOtro({
         selectCatalogoEl: document.getElementById("be-lugar-select"),
-        inputTextoEl: document.getElementById("be-lugar-txt")
+        inputTextoEl: document.getElementById("be-lugar-txt"),
       });
+
+      const idiomaSel = document.getElementById("be-idioma");
+      const idiomaTxt = document.getElementById("be-idioma-txt");
+      const idiomaVal = leerSelectOEscribir(idiomaSel, idiomaTxt);
+
+      const tipoGuiaSel = document.getElementById("be-tipo-guia");
+      const tipoGuiaTxt = document.getElementById("be-tipo-guia-txt");
+      const tipoGuiaVal = leerSelectOEscribir(tipoGuiaSel, tipoGuiaTxt);
 
       payload.boleto_entrada = {
         boleto_entrada: lugarFinal || null,
-        tipo_entrada: tipoEntrada,
-        tipo_entrada_otro: tipoEntradaOtro,
-        audioguia: document.getElementById("be-audioguia")?.value === "1",
-        idioma: document.getElementById("be-idioma")?.value || null
+        tipo_entrada: tipoEntradaSel?.value === "__write__" ? "OTRA" : tipoEntradaSel?.value || null,
+        tipo_entrada_otro: tipoEntradaSel?.value === "__write__" ? tipoEntradaVal : null,
+        audioguia: tipoGuiaVal === "AUDIOGUIA",
+        tipo_guia: tipoGuiaVal || null,
+        idioma: idiomaVal || null,
       };
     }
 
-    // Traslado (Origen/Destino ahora select + otro)
+    // TRASLADO
     if (tipoTexto.includes("trasl")) {
-      const tipo = document.getElementById("tr-tipo")?.value || null;
-      const tipoOtro = document.getElementById("tr-tipo-otro")?.value?.trim() || null;
-      const veh = document.getElementById("tr-vehiculo")?.value || null;
-      const vehOtro = document.getElementById("tr-vehiculo-otro")?.value?.trim() || null;
+      const tipoSel = document.getElementById("tr-tipo");
+      const tipoTxt = document.getElementById("tr-tipo-otro");
+      const tipoFinal = leerSelectOEscribir(tipoSel, tipoTxt);
+
+      const vehSel = document.getElementById("tr-vehiculo");
+      const vehTxt = document.getElementById("tr-vehiculo-txt");
+      const vehFinal = leerSelectOEscribir(vehSel, vehTxt);
 
       const origenFinal = leerValorOtro({
         selectCatalogoEl: document.getElementById("tr-origen-select"),
-        inputTextoEl: document.getElementById("tr-origen-txt")
+        inputTextoEl: document.getElementById("tr-origen-txt"),
       });
       const destinoFinal = leerValorOtro({
         selectCatalogoEl: document.getElementById("tr-destino-select"),
-        inputTextoEl: document.getElementById("tr-destino-txt")
+        inputTextoEl: document.getElementById("tr-destino-txt"),
       });
 
       payload.traslado = {
         origen: origenFinal || null,
         destino: destinoFinal || null,
-        tipo_traslado: tipo,
-        tipo_traslado_otro: (tipo === "OTRO") ? tipoOtro : null,
-        vehiculo: veh,
-        vehiculo_otro: (veh === "OTRO") ? vehOtro : null,
-        nota: document.getElementById("tr-nota")?.value?.trim() || null
+        tipo_traslado: tipoSel?.value === "__write__" ? "OTRO" : tipoSel?.value || null,
+        tipo_traslado_otro: tipoSel?.value === "__write__" ? tipoFinal : null,
+        vehiculo: vehSel?.value === "__write__" ? "OTRO" : vehSel?.value || null,
+        vehiculo_otro: vehSel?.value === "__write__" ? vehFinal : null,
+        nota: document.getElementById("tr-nota")?.value?.trim() || null,
       };
     }
 
-    // Tour
+    // TOUR
     if (tipoTexto.includes("excurs") || tipoTexto.includes("visita") || tipoTexto.includes("tour")) {
-      const tipoGuia = document.getElementById("tu-tipo-guia")?.value || null;
-      const tipoGuiaOtro = document.getElementById("tu-tipo-guia-otro")?.value?.trim() || null;
+      const tipoGuiaSel = document.getElementById("tu-tipo-guia");
+      const tipoGuiaTxt = document.getElementById("tu-tipo-guia-otro");
+      const tipoGuiaVal = leerSelectOEscribir(tipoGuiaSel, tipoGuiaTxt);
 
-      const idioma = document.getElementById("tu-idioma")?.value || null;
-      const idiomaOtro = document.getElementById("tu-idioma-otro")?.value?.trim() || null;
+      const idiomaSel = document.getElementById("tu-idioma");
+      const idiomaTxt = document.getElementById("tu-idioma-txt");
+      const idiomaVal = leerSelectOEscribir(idiomaSel, idiomaTxt);
 
       payload.tour = {
-        tipo_guia: tipoGuia,
-        tipo_guia_otro: (tipoGuia === "OTRO") ? tipoGuiaOtro : null,
-        idioma: idioma,
-        idioma_otro: (idioma === "OTRO") ? idiomaOtro : null
+        tipo_guia: tipoGuiaSel?.value === "__write__" ? "OTRO" : tipoGuiaSel?.value || null,
+        tipo_guia_otro: tipoGuiaSel?.value === "__write__" ? tipoGuiaVal : null,
+        idioma: idiomaSel?.value === "__write__" ? "OTRO" : idiomaSel?.value || null,
+        idioma_otro: idiomaSel?.value === "__write__" ? idiomaVal : null,
       };
     }
 
-    // Vuelo
+    // VUELO
     if (tipoTexto.includes("vuelo")) {
+      const origen = leerSelectOEscribir(document.getElementById("vu-origen"), document.getElementById("vu-origen-txt"));
+      const destino = (document.getElementById("vu-destino")?.value || "").trim();
+      const clase = (document.getElementById("vu-clase")?.value || "").trim();
+      const equipaje = (document.getElementById("vu-equipaje")?.value || "").trim();
+      const escalasSel = document.getElementById("vu-escalas");
+      const escalasVal = (escalasSel?.value || "").trim();
+      const n = Number(escalasVal);
+      const escalasNum = Number.isFinite(n) ? n : 0;
+
       payload.vuelo = {
-        origen: document.getElementById("vu-origen")?.value || "",
-        destino: document.getElementById("vu-destino")?.value || "",
-        escalas: Number(document.getElementById("vu-escalas")?.value || 0),
-        clase: document.getElementById("vu-clase")?.value || null,
-        equipaje: document.getElementById("vu-equipaje")?.value || null
+        origen: origen || "",
+        destino: destino || "",
+        escalas: escalasNum,
+        clase: clase || "",
+        equipaje: equipaje || "",
       };
     }
 
-    // Tren
+    // TREN
     if (tipoTexto.includes("tren")) {
+      const origen = leerSelectOEscribir(document.getElementById("tr-origen"), document.getElementById("tr-origen-txt"));
+      const destino = (document.getElementById("tr-destino")?.value || "").trim();
+      const clase = (document.getElementById("tr-clase")?.value || "").trim();
+      const equipaje = (document.getElementById("tr-equipaje")?.value || "").trim();
+      const escalasSel = document.getElementById("tr-escalas");
+      const escalasVal = (escalasSel?.value || "").trim();
+      const n = Number(escalasVal);
+      const escalasNum = Number.isFinite(n) ? n : 0;
+
       payload.tren = {
-        origen: document.getElementById("tr-origen")?.value || "",
-        destino: document.getElementById("tr-destino")?.value || "",
-        escalas: Number(document.getElementById("tr-escalas")?.value || 0),
-        clase: document.getElementById("tr-clase")?.value || null,
-        equipaje: document.getElementById("tr-equipaje")?.value || null,
-        sillas_reservadas: document.getElementById("tr-sillas")?.value === "1"
+        origen: origen || "",
+        destino: destino || "",
+        escalas: escalasNum,
+        clase: clase || "",
+        equipaje: equipaje || null,
+        sillas_reservadas: document.getElementById("tr-sillas")?.value === "1",
       };
     }
 
@@ -928,14 +1192,16 @@ document.addEventListener("DOMContentLoaded", () => {
       const resp = await fetch("/api/servicios", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
       });
 
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok || !data.ok) throw new Error(data.mensaje || data.error || "Error creando servicio");
 
       await cargarTodosLosServicios();
-      selectServicio.value = String(data.id_servicio);
+
+      if (selectServicio) selectServicio.value = String(data.id_servicio);
+
       panelCrear.style.display = "none";
     } catch (e) {
       console.error(e);
@@ -943,7 +1209,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // ===== Cotización existente =====
+  // ==========================
+  // Cotización existente
+  // ==========================
   async function cargarCotizacionExistente() {
     if (!idCotizacion) return;
     try {
@@ -964,16 +1232,29 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
+  // ==========================
+  // Insertar servicio
+  // ==========================
   btnInsertarServicio?.addEventListener("click", async () => {
     mostrarError("");
 
     if (!idCotizacion) return mostrarError("Falta el ID de cotización en la URL.");
 
     const fechaDesde = fechaDesdeInput?.value;
+    const fechaHasta = fechaHastaInput?.value;
     const idServicioSeleccionado = selectServicio?.value;
 
     if (!idServicioSeleccionado) return mostrarError("Selecciona un servicio antes de insertarlo.");
     if (!fechaDesde) return mostrarError("Selecciona la fecha de servicio.");
+
+    if (esTipoAlojamientoSeleccionado()) {
+      if (!fechaHasta) return mostrarError("En alojamiento debes seleccionar también la fecha hasta (check-out).");
+
+      const noches = calcularNoches(fechaDesde, fechaHasta);
+      if (!Number.isFinite(noches) || noches < 1) {
+        return mostrarError("La fecha hasta debe ser posterior a la fecha desde (mínimo 1 noche).");
+      }
+    }
 
     const esOpcional = chkOpcional && chkOpcional.checked ? 1 : 0;
 
@@ -984,14 +1265,21 @@ document.addEventListener("DOMContentLoaded", () => {
         body: JSON.stringify({
           id_servicio: Number(idServicioSeleccionado),
           fecha_servicio: fechaDesde,
-          es_opcional: esOpcional
-        })
+          es_opcional: esOpcional,
+        }),
       });
 
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok || !data.ok) throw new Error(data.mensaje || data.error || "Error al insertar servicio.");
 
-      const nuevoItem = mapRowToItem(data.item);
+      // ✅ completa texto si backend no lo devuelve
+      const row = data.item || {};
+      if (!row.servicio_texto) {
+        const idSrvKey = String(row.id_servicio || idServicioSeleccionado);
+        if (servicioTextoById.has(idSrvKey)) row.servicio_texto = servicioTextoById.get(idSrvKey);
+      }
+
+      const nuevoItem = mapRowToItem(row);
       items.push(nuevoItem);
       actualizarTablaDesdeEstado();
       await guardarOrdenEnBackend();
@@ -1005,12 +1293,20 @@ document.addEventListener("DOMContentLoaded", () => {
     window.location.href = "../etapa2/servicios-crear.html";
   });
 
+  // ==========================
+  // Init
+  // ==========================
   (async () => {
     await cargarContinentes();
     await cargarTiposServicio();
-    await cargarTodosLosServicios();
+    await cargarTodosLosServicios(); // ✅ llena servicioTextoById antes de cargar cotización
     await cargarProveedores();
     await cargarCotizacionExistente();
     actualizarVisibilidadFechaHasta();
+    actualizarNochesYFiltrarServicios();
+
+    if (inpNombreAutoPreview) {
+      inpNombreAutoPreview.value = "Se genera automáticamente al guardar";
+    }
   })();
 });

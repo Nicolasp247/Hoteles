@@ -1,65 +1,134 @@
 // public/etapa3/precios-servicios.js
 document.addEventListener("DOMContentLoaded", () => {
+  // =========================
+  // Config
+  // =========================
+  const ANIOS_UI = [2025, 2026];
+  const MESES = [
+    "Enero","Febrero","Marzo","Abril","Mayo","Junio",
+    "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"
+  ];
+
+  // =========================
+  // DOM (filtros + selección)
+  // =========================
   const filtroContinente = document.getElementById("filtro-continente");
-  const filtroPais = document.getElementById("filtro-pais");
-  const filtroCiudad = document.getElementById("filtro-ciudad");
-  const filtroTipo = document.getElementById("filtro-tipo");
+  const filtroPais       = document.getElementById("filtro-pais");
+  const filtroCiudad     = document.getElementById("filtro-ciudad");
+  const filtroTipo       = document.getElementById("filtro-tipo");
 
   const selServicio = document.getElementById("sel-servicio");
-  const inpAnio = document.getElementById("inp-anio");
-  const selTipoHab = document.getElementById("sel-tipo-hab");
-  const btnCargar = document.getElementById("btn-cargar");
-  const btnGuardar = document.getElementById("btn-guardar");
-  const tbody = document.getElementById("tbody-precios");
+  const selAnio     = document.getElementById("sel-anio");
+
+  // =========================
+  // DOM (tabla sin precio + panel seleccionado)
+  // =========================
+  const btnSinPrecio          = document.getElementById("btn-sin-precio");
+  const cardSinPrecio         = document.getElementById("card-sin-precio");
+  const tbodySinPrecio        = document.getElementById("tbody-sin-precio");
+  const btnCerrarSinPrecio    = document.getElementById("btn-cerrar-sin-precio");
+
+  const cardServicioSel       = document.getElementById("card-servicio-seleccionado");
+  const srvSelResumen         = document.getElementById("srv-seleccionado-resumen");
+  const btnAbrirEditarModal   = document.getElementById("btn-abrir-editar-modal");
+  const btnAbrirPreciosModal  = document.getElementById("btn-abrir-precios-modal");
+  const btnCancelarServicio   = document.getElementById("btn-cancelar-servicio");
+
+  // =========================
+  // DOM (modal dialog)
+  // =========================
+  const modalServicio   = document.getElementById("modal-servicio");
+  const btnModalEditar  = document.getElementById("btn-modal-editar");
+  const btnModalPrecios = document.getElementById("btn-modal-precios");
+  const btnModalCerrar  = document.getElementById("btn-modal-cerrar");
+
+  // Modal: detalle + edición
+  const srvDetalle = document.getElementById("srv-detalle");
+  const srvEditar  = document.getElementById("srv-editar");
+
+  const btnEditar            = document.getElementById("btn-editar");
+  const btnCancelarEdicion   = document.getElementById("btn-cancelar-edicion");
+  const btnGuardarEdicion    = document.getElementById("btn-guardar-edicion");
+
+  const edNombre     = document.getElementById("ed-nombre");
+  const edProveedor  = document.getElementById("ed-proveedor");
+  const edTiempo     = document.getElementById("ed-tiempo");
+  const edPrivado    = document.getElementById("ed-privado");
+  const edLink       = document.getElementById("ed-link");
+  const edDesc       = document.getElementById("ed-desc");
+  const edReadonly   = document.getElementById("ed-readonly");
+
+  // Modal: precios
+  const tbodyPrecios = document.getElementById("tbody-precios");
+  const btnGuardarPrecios = document.getElementById("btn-guardar");
   const msg = document.getElementById("msg");
 
-  const btnEditar = document.getElementById("btn-editar");
-  const btnCancelarEdicion = document.getElementById("btn-cancelar-edicion");
-  const btnGuardarEdicion = document.getElementById("btn-guardar-edicion");
-  const srvDetalle = document.getElementById("srv-detalle");
-  const srvEditar = document.getElementById("srv-editar");
+  // (Opcional) si existe en tu HTML, lo usamos. Si no, DBL por defecto.
+  const selTipoHab = document.getElementById("sel-tipo-hab");
 
-  const edNombre = document.getElementById("ed-nombre");
-  const edProveedor = document.getElementById("ed-proveedor");
-  const edTiempo = document.getElementById("ed-tiempo");
-  const edPrivado = document.getElementById("ed-privado");
-  const edLink = document.getElementById("ed-link");
-  const edDesc = document.getElementById("ed-desc");
-  const edReadonly = document.getElementById("ed-readonly");
-
-  const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
-
+  // =========================
+  // Estado
+  // =========================
   let allServicios = [];
   let serviciosFiltrados = [];
   let detalleActual = null;
-  let proveedoresCache = [];
 
-  function show(el, v) { if (!el) return; el.classList.toggle("hide", !v); }
+  let proveedoresCache = [];
+  let tiposServicioCache = [];
+
+  let servicioSeleccionadoTablaId = null; // cuando viene desde "sin precio"
+
+  // =========================
+  // Helpers
+  // =========================
+  function show(el, v) {
+    if (!el) return;
+    el.classList.toggle("hide", !v);
+  }
+
   function setMsg(text, isError = false) {
+    if (!msg) return;
     msg.textContent = text || "";
     msg.style.color = isError ? "crimson" : "inherit";
   }
 
-  function parseAnioSeguro() {
-    const raw = String(inpAnio?.value || "").trim();
-    const n = Number(raw);
-    if (!Number.isFinite(n)) return null;
-    const anio = Math.trunc(n);
-    if (anio < 2000 || anio > 2100) return null;
-    return anio;
+  function safeText(v) {
+    return v == null ? "" : String(v);
   }
 
   function round2(n) {
     return Math.round((n + Number.EPSILON) * 100) / 100;
   }
 
-  async function fetchLista(url, posiblesKeys = []) {
-    const resp = await fetch(url);
+  function getAnioUI() {
+    const n = Number(String(selAnio?.value || "").trim());
+    if (!Number.isFinite(n)) return ANIOS_UI[0];
+    if (!ANIOS_UI.includes(n)) return ANIOS_UI[0];
+    return n;
+  }
+
+  function getTipoHabUI() {
+    const v = String(selTipoHab?.value || "DBL").trim().toUpperCase();
+    if (!["DBL", "SGL", "TPL"].includes(v)) return "DBL";
+    return v;
+  }
+
+  async function fetchJSON(url, opts) {
+    const resp = await fetch(url, opts);
     const text = await resp.text();
-    let data;
-    try { data = JSON.parse(text); }
+    let data = null;
+    try { data = text ? JSON.parse(text) : {}; }
     catch { throw new Error(`Respuesta no-JSON desde ${url}: ${text.slice(0, 180)}`); }
 
+    if (!resp.ok) {
+      const m = data?.mensaje || data?.error || `HTTP ${resp.status}`;
+      throw new Error(m);
+    }
+    return data;
+  }
+
+  async function fetchLista(url, posiblesKeys = []) {
+    const data = await fetchJSON(url);
     if (Array.isArray(data)) return data;
     for (const k of posiblesKeys) if (Array.isArray(data?.[k])) return data[k];
     throw new Error(`Formato inesperado desde ${url}`);
@@ -69,13 +138,93 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!selectEl) return;
     selectEl.innerHTML = "";
     if (firstText !== null) selectEl.appendChild(new Option(firstText, firstValue));
-    opciones.forEach(o => selectEl.appendChild(new Option(o.text, o.value)));
+    (opciones || []).forEach(o => selectEl.appendChild(new Option(o.text, o.value)));
   }
 
-  function renderTabla(precios12) {
-    tbody.innerHTML = "";
+  function getTipoNombreById(idTipo) {
+    const t = tiposServicioCache.find(x => String(x.id) === String(idTipo));
+    return t?.nombre || "";
+  }
 
-    // Normalizar a map mes -> precio_usd
+  function esAlojamientoByTipoId(idTipo) {
+    const nombre = getTipoNombreById(idTipo);
+    return nombre.toLowerCase().includes("aloj");
+  }
+
+  function labelServicio(s) {
+    const ciudad = (s.ciudad || "").trim();
+    const txtBase = (s.servicio_texto || s.nombre_wtravel || `Servicio #${s.id}`).trim();
+    return ciudad ? `[${ciudad}] ${txtBase}` : txtBase;
+  }
+
+  function resetDetalleUI() {
+    detalleActual = null;
+    renderDetalle(null);
+    show(btnEditar, false);
+    show(btnCancelarEdicion, false);
+    show(btnGuardarEdicion, false);
+    show(srvEditar, false);
+  }
+
+  function cerrarPanelSeleccionado() {
+    servicioSeleccionadoTablaId = null;
+    show(cardServicioSel, false);
+    if (srvSelResumen) {
+      srvSelResumen.innerHTML = `<div class="muted">Aún no has seleccionado un servicio de la tabla.</div>`;
+    }
+  }
+
+  // =========================
+  // Render Detalle (modal)
+  // =========================
+  function renderDetalle(det) {
+    if (!srvDetalle) return;
+    srvDetalle.innerHTML = "";
+
+    if (!det) {
+      srvDetalle.innerHTML = `<div class="muted">Selecciona un servicio para ver detalles.</div>`;
+      return;
+    }
+
+    const kv = [
+      ["Tipo", safeText(det.tipo)],
+      ["Ciudad", safeText(det.ciudad)],
+      ["Proveedor", safeText(det.proveedor)],
+      ["Tiempo", safeText(det.tiempo_servicio)],
+      ["Privado", det.privado ? "Sí" : "No"],
+      ["Link", det.link_reserva ? det.link_reserva : "(sin link)"],
+      ["Descripción", det.descripcion || "(sin descripción)"],
+    ];
+
+    kv.forEach(([k, v]) => {
+      const a = document.createElement("div");
+      a.className = "muted";
+      a.textContent = k;
+
+      const b = document.createElement("div");
+      if (k === "Link" && det.link_reserva) {
+        const link = document.createElement("a");
+        link.href = det.link_reserva;
+        link.target = "_blank";
+        link.rel = "noopener";
+        link.textContent = det.link_reserva;
+        b.appendChild(link);
+      } else {
+        b.textContent = v;
+      }
+
+      srvDetalle.appendChild(a);
+      srvDetalle.appendChild(b);
+    });
+  }
+
+  // =========================
+  // Tabla de precios (modal)
+  // =========================
+  function renderTablaPrecios(precios12) {
+    if (!tbodyPrecios) return;
+    tbodyPrecios.innerHTML = "";
+
     const map = new Map();
     (precios12 || []).forEach(x => {
       const mes = Number(x?.mes);
@@ -101,18 +250,20 @@ document.addEventListener("DOMContentLoaded", () => {
       tdPrecio.appendChild(input);
       tr.appendChild(tdMes);
       tr.appendChild(tdPrecio);
-      tbody.appendChild(tr);
+      tbodyPrecios.appendChild(tr);
     }
   }
 
   // =========================
-  // Cargar filtros ubicación
+  // Cargar catálogos
   // =========================
   async function cargarContinentes() {
     const lista = await fetchLista("/api/continentes", ["continentes"]);
-    addOptions(filtroContinente, lista.map(x => ({ value: String(x.id), text: x.nombre })), {
-      firstText: "(Todos los continentes)", firstValue: ""
-    });
+    addOptions(
+      filtroContinente,
+      lista.map(x => ({ value: String(x.id), text: x.nombre })),
+      { firstText: "(Todos los continentes)", firstValue: "" }
+    );
   }
 
   async function cargarPaises(idContinente) {
@@ -122,9 +273,11 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     const lista = await fetchLista(`/api/paises/${idContinente}`, ["paises"]);
-    addOptions(filtroPais, lista.map(x => ({ value: String(x.id), text: x.nombre })), {
-      firstText: "(Todos los países)", firstValue: ""
-    });
+    addOptions(
+      filtroPais,
+      lista.map(x => ({ value: String(x.id), text: x.nombre })),
+      { firstText: "(Todos los países)", firstValue: "" }
+    );
     addOptions(filtroCiudad, [], { firstText: "(Todas las ciudades)", firstValue: "" });
   }
 
@@ -134,17 +287,32 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
     const lista = await fetchLista(`/api/ciudades/${idPais}`, ["ciudades"]);
-    addOptions(filtroCiudad, lista.map(x => ({ value: String(x.id), text: x.nombre })), {
-      firstText: "(Todas las ciudades)", firstValue: ""
-    });
+    addOptions(
+      filtroCiudad,
+      lista.map(x => ({ value: String(x.id), text: x.nombre })),
+      { firstText: "(Todas las ciudades)", firstValue: "" }
+    );
   }
 
   async function cargarTiposServicio() {
     const lista = await fetchLista("/api/tiposervicio", ["tipos", "tipos_servicio", "tiposervicio"]);
-    // En esta pantalla no queremos ALOJAMIENTO
-    const filtrados = lista.filter(t => !String(t.nombre || "").toLowerCase().includes("aloj"));
-    addOptions(filtroTipo, filtrados.map(t => ({ value: String(t.id), text: t.nombre })), {
-      firstText: "(Todos los tipos)", firstValue: ""
+    tiposServicioCache = lista || [];
+
+    // pantalla precios-servicios: no queremos alojamiento
+    const filtrados = (lista || []).filter(t => !String(t.nombre || "").toLowerCase().includes("aloj"));
+    addOptions(
+      filtroTipo,
+      filtrados.map(t => ({ value: String(t.id), text: t.nombre })),
+      { firstText: "(Todos los tipos)", firstValue: "" }
+    );
+  }
+
+  async function cargarProveedores() {
+    proveedoresCache = await fetchLista("/api/proveedores", ["proveedores"]);
+    if (!edProveedor) return;
+    edProveedor.innerHTML = "";
+    proveedoresCache.forEach(p => {
+      edProveedor.appendChild(new Option(`${p.nombre} (${p.iniciales || ""})`, String(p.id)));
     });
   }
 
@@ -153,16 +321,16 @@ document.addEventListener("DOMContentLoaded", () => {
   // =========================
   async function cargarServicios() {
     const lista = await fetchLista("/api/servicios", ["servicios"]);
-    // Sacar alojamiento de esta pantalla
-    allServicios = lista.filter(s => !String(s.tipo || "").toLowerCase().includes("aloj"));
+    // sin alojamiento
+    allServicios = (lista || []).filter(s => !esAlojamientoByTipoId(s.id_tipo));
     filtrarServicios();
   }
 
   function filtrarServicios() {
-    const idCont = filtroContinente.value || null;
-    const idPais = filtroPais.value || null;
-    const idCiud = filtroCiudad.value || null;
-    const idTipo = filtroTipo.value || null;
+    const idCont = filtroContinente?.value || null;
+    const idPais = filtroPais?.value || null;
+    const idCiud = filtroCiudad?.value || null;
+    const idTipo = filtroTipo?.value || null;
 
     serviciosFiltrados = allServicios.filter(s => {
       if (idCont && String(s.id_continente ?? "") !== String(idCont)) return false;
@@ -172,201 +340,185 @@ document.addEventListener("DOMContentLoaded", () => {
       return true;
     });
 
-    // Orden más legible
     serviciosFiltrados.sort((a, b) => {
       const aa = (a.servicio_texto || a.nombre_wtravel || "").toLowerCase();
       const bb = (b.servicio_texto || b.nombre_wtravel || "").toLowerCase();
       return aa.localeCompare(bb);
     });
 
-    selServicio.innerHTML = "";
-    selServicio.appendChild(new Option("(Seleccionar servicio)", ""));
-
-    serviciosFiltrados.forEach(s => {
-      const ciudad = (s.ciudad || "").trim();
-      const txtBase = s.servicio_texto || s.nombre_wtravel || `Servicio #${s.id}`;
-      const txt = ciudad ? `[${ciudad}] ${txtBase}` : txtBase;
-      selServicio.appendChild(new Option(txt, String(s.id)));
-    });
-
-    // Reset detalle / edición
-    detalleActual = null;
-    renderDetalle(null);
-    show(btnEditar, false);
-    show(btnCancelarEdicion, false);
-    show(btnGuardarEdicion, false);
-    show(srvEditar, false);
-  }
-
-  // =========================
-  // Detalle + edición servicio
-  // =========================
-  function renderDetalle(det) {
-    srvDetalle.innerHTML = "";
-    if (!det) {
-      srvDetalle.innerHTML = `<div class="muted">Selecciona un servicio para ver detalles.</div>`;
-      return;
+    if (selServicio) {
+      selServicio.innerHTML = "";
+      selServicio.appendChild(new Option("(Seleccionar servicio)", ""));
+      serviciosFiltrados.forEach(s => {
+        selServicio.appendChild(new Option(labelServicio(s), String(s.id)));
+      });
     }
 
-    const kv = [
-      ["Tipo", det.tipo || ""],
-      ["Ciudad", det.ciudad || ""],
-      ["Proveedor", det.proveedor || ""],
-      ["Tiempo", det.tiempo_servicio || ""],
-      ["Privado", det.privado ? "Sí" : "No"],
-      ["Link", det.link_reserva ? det.link_reserva : "(sin link)"],
-      ["Descripción", det.descripcion || "(sin descripción)"],
-    ];
-
-    kv.forEach(([k, v]) => {
-      const a = document.createElement("div");
-      a.className = "muted";
-      a.textContent = k;
-
-      const b = document.createElement("div");
-      if (k === "Link" && det.link_reserva) {
-        const link = document.createElement("a");
-        link.href = det.link_reserva;
-        link.target = "_blank";
-        link.rel = "noopener";
-        link.textContent = det.link_reserva;
-        b.appendChild(link);
-      } else {
-        b.textContent = v;
-      }
-      srvDetalle.appendChild(a);
-      srvDetalle.appendChild(b);
-    });
+    resetDetalleUI();
   }
 
-  async function cargarProveedores() {
-    proveedoresCache = await fetchLista("/api/proveedores", ["proveedores"]);
-    edProveedor.innerHTML = "";
-    proveedoresCache.forEach(p => {
-      edProveedor.appendChild(new Option(`${p.nombre} (${p.iniciales || ""})`, String(p.id)));
-    });
-  }
-
+  // =========================
+  // Detalle de servicio
+  // =========================
   async function cargarDetalleServicio(idServicio) {
     if (!idServicio) return;
+    setMsg("");
 
-    const resp = await fetch(`/api/servicios/${idServicio}`);
-    const data = await resp.json().catch(() => ({}));
-    if (!resp.ok || !data.ok) {
-      setMsg(data.mensaje || data.error || "No se pudo cargar detalle del servicio", true);
-      return;
+    try {
+      const data = await fetchJSON(`/api/servicios/${idServicio}`);
+      if (!data.ok) throw new Error(data.mensaje || data.error || "No se pudo cargar el detalle");
+
+      detalleActual = data.servicio;
+      renderDetalle(detalleActual);
+
+      show(btnEditar, true);
+      show(btnCancelarEdicion, false);
+      show(btnGuardarEdicion, false);
+      show(srvEditar, false);
+    } catch (e) {
+      setMsg(e.message, true);
+      resetDetalleUI();
     }
-
-    detalleActual = data.servicio;
-    renderDetalle(detalleActual);
-
-    show(btnEditar, true);
-    show(btnCancelarEdicion, false);
-    show(btnGuardarEdicion, false);
-    show(srvEditar, false);
   }
 
-  function abrirEdicion() {
-    if (!detalleActual) return;
-
-    edNombre.value = detalleActual.nombre_wtravel || "";
-    edTiempo.value = detalleActual.tiempo_servicio || "";
-    edPrivado.value = detalleActual.privado ? "1" : "0";
-    edLink.value = detalleActual.link_reserva || "";
-    edDesc.value = detalleActual.descripcion || "";
-
-    if (detalleActual.id_proveedor != null) {
-      edProveedor.value = String(detalleActual.id_proveedor);
-    }
-
-    edReadonly.textContent =
-      `Nota: Tipo y Ciudad se mantienen. (Tipo: ${detalleActual.tipo || ""} | Ciudad: ${detalleActual.ciudad || ""})`;
-
-    show(srvEditar, true);
-    show(btnEditar, false);
-    show(btnCancelarEdicion, true);
-    show(btnGuardarEdicion, true);
+  // =========================
+  // Modal: modos (editar / precios)
+  // =========================
+  function abrirModal() {
+    if (!modalServicio) return;
+    modalServicio.showModal();
   }
 
-  function cerrarEdicion() {
+  function cerrarModal() {
+    if (!modalServicio) return;
+    modalServicio.close();
+    setMsg("");
+    // dejar el modal limpio de edición visible
     show(srvEditar, false);
     show(btnEditar, !!detalleActual);
     show(btnCancelarEdicion, false);
     show(btnGuardarEdicion, false);
   }
 
-  async function guardarEdicion() {
+  function modalModoEditar() {
     if (!detalleActual) return;
 
-    const id = detalleActual.id;
-    const payload = {
-      id_tipo: detalleActual.id_tipo,
-      id_proveedor: Number(edProveedor.value),
-      id_ciudad: detalleActual.id_ciudad,
-      nombre_wtravel: (edNombre.value || "").trim(),
-      tiempo_servicio: (edTiempo.value || "").trim() || null,
-      privado: edPrivado.value === "1",
-      descripcion: (edDesc.value || "").trim() || null,
-      link_reserva: (edLink.value || "").trim() || null
-    };
+    // cargar inputs
+    if (edNombre) edNombre.value = detalleActual.nombre_wtravel || "";
+    if (edTiempo) edTiempo.value = detalleActual.tiempo_servicio || "";
+    if (edPrivado) edPrivado.value = detalleActual.privado ? "1" : "0";
+    if (edLink) edLink.value = detalleActual.link_reserva || "";
+    if (edDesc) edDesc.value = detalleActual.descripcion || "";
 
-    if (!payload.nombre_wtravel) return setMsg("Falta el nombre WTravel.", true);
-
-    const resp = await fetch(`/api/servicio/${id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-
-    const data = await resp.json().catch(() => ({}));
-    if (!resp.ok || !data.ok) {
-      return setMsg(data.mensaje || data.error || "Error guardando cambios", true);
+    if (edProveedor && detalleActual.id_proveedor != null) {
+      edProveedor.value = String(detalleActual.id_proveedor);
     }
 
-    setMsg("Servicio actualizado ✅");
-    cerrarEdicion();
+    if (edReadonly) {
+      edReadonly.textContent =
+        `Nota: Tipo y Ciudad se mantienen. (Tipo: ${detalleActual.tipo || ""} | Ciudad: ${detalleActual.ciudad || ""})`;
+    }
 
-    // Recargar lista y detalle para refrescar el texto del select
-    await cargarServicios();
-    selServicio.value = String(id);
-    await cargarDetalleServicio(id);
+    // mostrar form
+    show(srvEditar, true);
+
+    // botones: usamos los de arriba del card detalle
+    show(btnEditar, false);
+    show(btnCancelarEdicion, true);
+    show(btnGuardarEdicion, true);
+
+    // precios no se esconden porque en tu HTML están en el mismo modal,
+    // pero tú eliges con botones. Aquí solo preparamos edición.
+    setMsg("");
+  }
+
+  async function modalModoPrecios() {
+    if (!detalleActual) return;
+    setMsg("");
+
+    // Cargar precios del año UI actual
+    await cargarPreciosDeServicio(detalleActual.id, getAnioUI(), getTipoHabUI());
   }
 
   // =========================
-  // Precios
+  // Guardar edición (PUT servicio)
   // =========================
-  async function cargarPrecios() {
+  async function guardarEdicion() {
+    if (!detalleActual) return;
     setMsg("");
 
-    const id = selServicio.value;
-    const anio = parseAnioSeguro();
-    const tipoHab = selTipoHab.value;
+    const id = detalleActual.id;
 
-    if (!id) return setMsg("Selecciona un servicio.", true);
-    if (!anio) return setMsg("Año inválido. Usa un año entre 2000 y 2100.", true);
+    const payload = {
+      id_tipo: detalleActual.id_tipo,
+      id_proveedor: Number(edProveedor?.value),
+      id_ciudad: detalleActual.id_ciudad,
 
-    const resp = await fetch(
-      `/api/servicios/${id}/precios?anio=${encodeURIComponent(anio)}&tipo_habitacion=${encodeURIComponent(tipoHab)}`
-    );
-    const data = await resp.json().catch(() => ({}));
+      tiempo_servicio: (edTiempo?.value || "").trim() || null,
+      privado: String(edPrivado?.value) === "1",
+      descripcion: (edDesc?.value || "").trim() || null,
+      link_reserva: (edLink?.value || "").trim() || null
+      // nombre_wtravel NO lo mandamos (tu backend lo recalcula)
+    };
 
-    if (!resp.ok || !data.ok) return setMsg(data.mensaje || data.error || "Error cargando precios", true);
+    try {
+      const data = await fetchJSON(`/api/servicio/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
 
-    renderTabla(data.precios || []);
-    setMsg("Precios cargados ✅");
+      if (!data.ok) throw new Error(data.mensaje || data.error || "Error guardando cambios");
+
+      setMsg("Servicio actualizado ✅");
+
+      // refrescar lista y detalle
+      await cargarServicios();
+      if (selServicio) selServicio.value = String(id);
+      await cargarDetalleServicio(id);
+
+      // cerrar edición visual
+      show(srvEditar, false);
+      show(btnEditar, true);
+      show(btnCancelarEdicion, false);
+      show(btnGuardarEdicion, false);
+
+    } catch (e) {
+      setMsg(e.message, true);
+    }
   }
 
-  async function guardarPrecios() {
+  // =========================
+  // Precios (GET/PUT)
+  // =========================
+  async function cargarPreciosDeServicio(idServicio, anio, tipoHab) {
+    if (!idServicio) return;
+
+    try {
+      const data = await fetchJSON(
+        `/api/servicios/${idServicio}/precios?anio=${encodeURIComponent(anio)}&tipo_habitacion=${encodeURIComponent(tipoHab)}`
+      );
+      if (!data.ok) throw new Error(data.mensaje || data.error || "Error cargando precios");
+
+      renderTablaPrecios(data.precios || []);
+      setMsg(`Precios cargados ✅ (${anio} - ${tipoHab})`);
+    } catch (e) {
+      setMsg(e.message, true);
+      renderTablaPrecios([]);
+    }
+  }
+
+  async function guardarPreciosDeServicio() {
     setMsg("");
 
-    const id = selServicio.value;
-    const anio = parseAnioSeguro();
-    const tipoHab = selTipoHab.value;
+    if (!detalleActual) return setMsg("Primero selecciona un servicio.", true);
+    const idServicio = detalleActual.id;
+    const anio = getAnioUI();
+    const tipoHab = getTipoHabUI();
 
-    if (!id) return setMsg("Selecciona un servicio.", true);
-    if (!anio) return setMsg("Año inválido. Usa un año entre 2000 y 2100.", true);
+    if (!tbodyPrecios) return setMsg("No encuentro la tabla de precios en el HTML.", true);
 
-    const inputs = tbody.querySelectorAll("input[type='number']");
+    const inputs = tbodyPrecios.querySelectorAll("input[type='number']");
     const precios = [];
 
     for (const inp of inputs) {
@@ -379,88 +531,254 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       const n = Number(raw);
-
-      if (!Number.isFinite(n)) {
-        return setMsg(`Precio inválido en mes ${mes} (${MESES[mes - 1]}).`, true);
-      }
-      if (n < 0) {
-        return setMsg(`No se permiten precios negativos (mes ${mes}: ${MESES[mes - 1]}).`, true);
-      }
+      if (!Number.isFinite(n)) return setMsg(`Precio inválido en mes ${mes} (${MESES[mes - 1]}).`, true);
+      if (n < 0) return setMsg(`No se permiten negativos (mes ${mes}: ${MESES[mes - 1]}).`, true);
 
       precios.push({ mes, precio_usd: round2(n) });
     }
 
-    const resp = await fetch(
-      `/api/servicios/${id}/precios?anio=${encodeURIComponent(anio)}&tipo_habitacion=${encodeURIComponent(tipoHab)}`,
-      {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ precios })
+    try {
+      const data = await fetchJSON(
+        `/api/servicios/${idServicio}/precios?anio=${encodeURIComponent(anio)}&tipo_habitacion=${encodeURIComponent(tipoHab)}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ precios })
+        }
+      );
+      if (!data.ok) throw new Error(data.mensaje || data.error || "Error guardando precios");
+
+      setMsg("Guardado listo ✅");
+      await cargarPreciosDeServicio(idServicio, anio, tipoHab);
+    } catch (e) {
+      setMsg(e.message, true);
+    }
+  }
+
+  // =========================
+  // Servicios sin precio (card)
+  // =========================
+  function toggleCardSinPrecio(open) {
+    show(cardSinPrecio, !!open);
+  }
+
+  function buildSinPrecioQuery() {
+    // Si tu endpoint acepta filtros, aquí se los mandamos.
+    // Si NO los acepta, igual funciona, solo ignora params.
+    const params = new URLSearchParams();
+
+    // años (internamente solo 2025/2026)
+    params.set("anio_desde", "2025");
+    params.set("anio_hasta", "2026");
+
+    // filtros actuales (opcional)
+    if (filtroContinente?.value) params.set("id_continente", filtroContinente.value);
+    if (filtroPais?.value) params.set("id_pais", filtroPais.value);
+    if (filtroCiudad?.value) params.set("id_ciudad", filtroCiudad.value);
+    if (filtroTipo?.value) params.set("id_tipo", filtroTipo.value);
+
+    // año elegido en pantalla (por si tu endpoint lista por un año específico)
+    params.set("anio", String(getAnioUI()));
+
+    // tipo hab (si tu endpoint lo usa)
+    params.set("tipo_habitacion", getTipoHabUI());
+
+    return `/api/servicios/sin-precio?${params.toString()}`;
+  }
+
+  async function cargarServiciosSinPrecio() {
+    if (!tbodySinPrecio) return;
+
+    tbodySinPrecio.innerHTML = `
+      <tr><td colspan="3" class="muted">Cargando...</td></tr>
+    `;
+
+    try {
+      const data = await fetchJSON(buildSinPrecioQuery());
+
+      const rows = Array.isArray(data.servicios) ? data.servicios : (Array.isArray(data) ? data : []);
+      if (!rows.length) {
+        tbodySinPrecio.innerHTML = `
+          <tr><td colspan="3" class="muted">No hay servicios pendientes 🎉</td></tr>
+        `;
+        return;
       }
-    );
 
-    const data = await resp.json().catch(() => ({}));
-    if (!resp.ok || !data.ok) return setMsg(data.mensaje || data.error || "Error guardando precios", true);
+      tbodySinPrecio.innerHTML = "";
 
-    setMsg("Guardado listo ✅");
+      rows.forEach((s) => {
+        const tr = document.createElement("tr");
 
-    // Opcional: recargar lo guardado para ver exactamente lo que quedó en BD
-    await cargarPrecios();
+        const tdCiudad = document.createElement("td");
+        tdCiudad.textContent = safeText(s.ciudad || s.nombre_ciudad || "");
+
+        const tdNombre = document.createElement("td");
+        tdNombre.textContent = safeText(s.nombre_wtravel || s.servicio_texto || "");
+
+        const tdAccion = document.createElement("td");
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "btn-primary";
+        btn.textContent = "Llenar precio";
+        btn.addEventListener("click", async () => {
+          const idServicio = s.id_servicio || s.id || s.servicio_id;
+          if (!idServicio) return;
+
+          servicioSeleccionadoTablaId = Number(idServicio);
+
+          // cargar detalle para mostrar resumen y preparar modal
+          await cargarDetalleServicio(servicioSeleccionadoTablaId);
+
+          // panel “Servicio seleccionado”
+          show(cardServicioSel, true);
+          if (srvSelResumen) {
+            srvSelResumen.innerHTML = `
+              <div class="muted">Ciudad</div><div>${safeText(detalleActual?.ciudad || "")}</div>
+              <div class="muted">Nombre WTravel</div><div>${safeText(detalleActual?.nombre_wtravel || "")}</div>
+              <div class="muted">Tipo</div><div>${safeText(detalleActual?.tipo || "")}</div>
+              <div class="muted">Proveedor</div><div>${safeText(detalleActual?.proveedor || "")}</div>
+            `;
+          }
+        });
+
+        tdAccion.appendChild(btn);
+
+        tr.appendChild(tdCiudad);
+        tr.appendChild(tdNombre);
+        tr.appendChild(tdAccion);
+        tbodySinPrecio.appendChild(tr);
+      });
+
+    } catch (e) {
+      console.error(e);
+      tbodySinPrecio.innerHTML = `
+        <tr><td colspan="3" style="color:crimson;">${safeText(e.message)}</td></tr>
+      `;
+    }
   }
 
   // =========================
   // Eventos
   // =========================
-  filtroContinente.addEventListener("change", async () => {
+  filtroContinente?.addEventListener("change", async () => {
+    setMsg("");
     await cargarPaises(filtroContinente.value || null);
     filtrarServicios();
   });
 
-  filtroPais.addEventListener("change", async () => {
+  filtroPais?.addEventListener("change", async () => {
+    setMsg("");
     await cargarCiudades(filtroPais.value || null);
     filtrarServicios();
   });
 
-  filtroCiudad.addEventListener("change", filtrarServicios);
-  filtroTipo.addEventListener("change", filtrarServicios);
+  filtroCiudad?.addEventListener("change", () => { setMsg(""); filtrarServicios(); });
+  filtroTipo?.addEventListener("change", () => { setMsg(""); filtrarServicios(); });
 
-  selServicio.addEventListener("change", async () => {
+  selServicio?.addEventListener("change", async () => {
+    setMsg("");
     const id = selServicio.value;
     if (!id) {
-      detalleActual = null;
-      renderDetalle(null);
-      cerrarEdicion();
-      show(btnEditar, false);
+      resetDetalleUI();
       return;
     }
+    // si cambias en el select, cargamos detalle, pero no abrimos modal
     await cargarDetalleServicio(id);
   });
 
-  btnCargar.addEventListener("click", cargarPrecios);
-  btnGuardar.addEventListener("click", guardarPrecios);
+  // Año cambia: si el modal está abierto y estás en precios, puedes recargar manual con botón “Poner precios”
+  selAnio?.addEventListener("change", () => setMsg(""));
 
-  btnEditar.addEventListener("click", abrirEdicion);
-  btnCancelarEdicion.addEventListener("click", () => { setMsg(""); cerrarEdicion(); });
-  btnGuardarEdicion.addEventListener("click", guardarEdicion);
+  // Card sin precio
+  btnSinPrecio?.addEventListener("click", async () => {
+    toggleCardSinPrecio(true);
+    await cargarServiciosSinPrecio();
+  });
+
+  btnCerrarSinPrecio?.addEventListener("click", () => {
+    toggleCardSinPrecio(false);
+  });
+
+  // Panel “Servicio seleccionado”
+  btnCancelarServicio?.addEventListener("click", () => {
+    cerrarPanelSeleccionado();
+  });
+
+  btnAbrirEditarModal?.addEventListener("click", () => {
+    if (!detalleActual) return setMsg("Primero selecciona un servicio.", true);
+    abrirModal();
+    // empezamos en modo “vista”, y luego al botón editar
+    // pero tú querías que “Editar información” ya lo abra listo:
+    modalModoEditar();
+  });
+
+  btnAbrirPreciosModal?.addEventListener("click", async () => {
+    if (!detalleActual) return setMsg("Primero selecciona un servicio.", true);
+    abrirModal();
+    await modalModoPrecios();
+  });
+
+  // Modal top buttons
+  btnModalCerrar?.addEventListener("click", cerrarModal);
+
+  btnModalEditar?.addEventListener("click", () => {
+    if (!detalleActual) return setMsg("Primero selecciona un servicio.", true);
+    modalModoEditar();
+  });
+
+  btnModalPrecios?.addEventListener("click", async () => {
+    if (!detalleActual) return setMsg("Primero selecciona un servicio.", true);
+    await modalModoPrecios();
+  });
+
+  // Botones dentro del card detalle (modal)
+  btnEditar?.addEventListener("click", modalModoEditar);
+  btnCancelarEdicion?.addEventListener("click", () => {
+    setMsg("");
+    show(srvEditar, false);
+    show(btnEditar, true);
+    show(btnCancelarEdicion, false);
+    show(btnGuardarEdicion, false);
+  });
+  btnGuardarEdicion?.addEventListener("click", guardarEdicion);
+
+  // Guardar precios (modal)
+  btnGuardarPrecios?.addEventListener("click", guardarPreciosDeServicio);
+
+  // Cerrar modal con ESC o cierre nativo
+  modalServicio?.addEventListener("close", () => {
+    setMsg("");
+  });
 
   // =========================
   // Init
   // =========================
-  inpAnio.value = String(new Date().getFullYear());
-  renderTabla([]);
-
   (async () => {
     try {
+      setMsg("");
+
+      // Años UI 2025/2026
+      if (selAnio) {
+        selAnio.innerHTML = "";
+        ANIOS_UI.forEach(y => selAnio.appendChild(new Option(String(y), String(y))));
+        selAnio.value = String(ANIOS_UI[0]);
+      }
+
+      // tablas limpias
+      renderTablaPrecios([]);
+
+      // ocultar secciones al inicio
+      toggleCardSinPrecio(false);
+      cerrarPanelSeleccionado();
+
       await cargarContinentes();
       await cargarTiposServicio();
       await cargarServicios();
       await cargarProveedores();
 
-      // Defaults para selects vacíos
       addOptions(filtroPais, [], { firstText: "(Todos los países)", firstValue: "" });
       addOptions(filtroCiudad, [], { firstText: "(Todas las ciudades)", firstValue: "" });
 
-      setMsg("");
     } catch (e) {
       console.error(e);
       setMsg(e.message, true);

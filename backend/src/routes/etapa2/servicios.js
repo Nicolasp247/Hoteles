@@ -3,6 +3,9 @@ const express = require("express");
 const router = express.Router();
 const pool = require("../../db"); // mysql2/promise pool
 
+// ✅ Generador del texto automático (nombre_wtravel)
+const { buildNombreWtravel } = require("../etapa3/servicios-texto");
+
 // Helper: normaliza "HH:MM" -> "HH:MM:00"
 function toTime(s) {
   if (!s) return null;
@@ -63,86 +66,6 @@ async function insertDynamicOneToOne(conn, tableName, id_servicio, obj) {
   return true;
 }
 
-async function tableHasColumn(conn, tableName, column) {
-  const cols = await getTableColumns(conn, tableName);
-  return cols.includes(column);
-}
-
-// =======================
-// Helpers de formato (servicio_texto)
-// =======================
-function textoEscalas(escalas) {
-  const n = Number(escalas);
-  if (!Number.isFinite(n) || n <= 0) return "directo";
-  return n === 1 ? "1 escala" : `${n} escalas`;
-}
-
-function pickOtro(enumVal, otroVal) {
-  if (!enumVal) return null;
-  if (String(enumVal).toUpperCase() === "OTRO") return otroVal || null;
-  return enumVal;
-}
-
-function toPrivadoTexto(privado) {
-  return privado ? "privado" : "compartido";
-}
-
-function toGrupoTexto(privado) {
-  return privado ? "privado" : "en grupo";
-}
-
-// ===== Pretty helpers (texto lindo) =====
-function capSentence(s) {
-  s = String(s || "").trim().toLowerCase();
-  if (!s) return "";
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-function prettyCategoriaHotel(code) {
-  const c = String(code || "").toUpperCase();
-  const map = {
-    H3_ECONOMICO: "hotel 3 estrellas económico",
-    H3_SUPERIOR: "hotel 3 estrellas superior",
-    H4_ECONOMICO: "hotel 4 estrellas económico",
-    H4_SUPERIOR: "hotel 4 estrellas superior",
-    H5_ECONOMICO: "hotel 5 estrellas económico",
-    H5_SUPERIOR: "hotel 5 estrellas superior",
-    LUJO_ECONOMICO: "hotel lujo económico",
-    LUJO_SUPERIOR: "hotel lujo superior",
-  };
-  return map[c] || capSentence(c.replaceAll("_", " "));
-}
-
-function prettyCategoriaHab(code) {
-  const c = String(code || "").toUpperCase();
-  const map = {
-    ESTANDAR: "habitación estándar",
-    STANDARD: "habitación estándar",
-    SUPERIOR: "habitación superior",
-    SUITE: "habitación suite",
-  };
-  // si viene algo raro, lo intenta “humanizar”
-  return map[c] || ("habitación " + capSentence(c.replaceAll("_", " ")));
-}
-
-function prettyRegimen(code) {
-  const c = String(code || "").toUpperCase();
-  const map = {
-    ALOJAMIENTO_DESAYUNO: "desayuno diario",
-    SOLO_ALOJAMIENTO: "solo alojamiento",
-    MEDIA_PENSION: "media pensión",
-    PENSION_COMPLETA: "pensión completa",
-    TODO_INCLUIDO: "todo incluido",
-  };
-  return map[c] || capSentence(c.replaceAll("_", " "));
-}
-
-function nochesTxt(n) {
-  const x = Number(n || 0);
-  if (!Number.isFinite(x) || x <= 0) return "";
-  return x === 1 ? "1 noche" : `${x} noches`;
-}
-
 /* =========================================================
    GET /api/proveedores
 ========================================================= */
@@ -164,7 +87,8 @@ router.get("/proveedores", async (_req, res) => {
 
 /* =========================================================
    POST /api/servicios
-   Crear servicio + subtabla (alojamiento / boleto / vuelo / tren / traslado / tour)
+   ✅ nombre_wtravel es AUTOMÁTICO (generado por buildNombreWtravel)
+   ✅ Devuelve también servicio_texto (igual a nombre_wtravel)
 ========================================================= */
 router.post("/servicios", async (req, res) => {
   let conn;
@@ -175,13 +99,11 @@ router.post("/servicios", async (req, res) => {
       id_tipo,
       id_proveedor,
       id_ciudad,
-      nombre_wtravel,
       tiempo_servicio,
       privado,
       descripcion,
       link_reserva,
 
-      // sub-objetos opcionales
       alojamiento,
       boleto_entrada,
       vuelo,
@@ -190,26 +112,23 @@ router.post("/servicios", async (req, res) => {
       tour,
     } = req.body || {};
 
-    if (!id_tipo || !id_proveedor || !id_ciudad || !nombre_wtravel) {
+    if (!id_tipo || !id_proveedor || !id_ciudad) {
       return res.status(400).json({
         ok: false,
-        mensaje:
-          "Faltan campos obligatorios: id_tipo, id_proveedor, id_ciudad, nombre_wtravel.",
+        mensaje: "Faltan campos obligatorios: id_tipo, id_proveedor, id_ciudad.",
       });
     }
 
-    // Detectar nombre del tipo para validar mínimos según formato
-    const [[tipoRow]] = await conn.execute(`SELECT nombre FROM tiposervicio WHERE id = ?`, [
-      Number(id_tipo),
-    ]);
+    const [[tipoRow]] = await conn.execute(
+      `SELECT nombre FROM tiposervicio WHERE id = ?`,
+      [Number(id_tipo)]
+    );
     const tipoNombre = (tipoRow?.nombre || "").toLowerCase();
     const descTrim = String(descripcion || "").trim();
 
-    // =========================
-    // Validaciones por tipo (mínimos obligatorios)
-    // =========================
-
-    // VUELO: escalas, origen, destino, clase, equipaje
+    // ==========================
+    // Validaciones mínimas (las tuyas, con fixes)
+    // ==========================
     if (tipoNombre.includes("vuelo")) {
       const v = vuelo || {};
       const origen = String(v.origen || "").trim();
@@ -229,13 +148,11 @@ router.post("/servicios", async (req, res) => {
       ) {
         return res.status(400).json({
           ok: false,
-          mensaje:
-            "Para VUELO son obligatorios: escalas, origen, destino, clase y equipaje.",
+          mensaje: "Para VUELO son obligatorios: escalas, origen, destino, clase y equipaje.",
         });
       }
     }
 
-    // TREN: escalas, origen, destino, clase, sillas_reservadas
     if (tipoNombre.includes("tren")) {
       const t = tren || {};
       const origen = String(t.origen || "").trim();
@@ -258,13 +175,11 @@ router.post("/servicios", async (req, res) => {
       ) {
         return res.status(400).json({
           ok: false,
-          mensaje:
-            "Para TREN son obligatorios: escalas, origen, destino, clase y sillas_reservadas.",
+          mensaje: "Para TREN son obligatorios: escalas, origen, destino, clase y sillas_reservadas.",
         });
       }
     }
 
-    // ALOJAMIENTO: noches, categoria_hab, regimen
     if (tipoNombre.includes("aloj")) {
       const a = alojamiento || {};
       const noches = Number(a.noches);
@@ -274,15 +189,15 @@ router.post("/servicios", async (req, res) => {
       if (!Number.isFinite(noches) || noches <= 0 || !regimen || !catHab) {
         return res.status(400).json({
           ok: false,
-          mensaje:
-            "Para ALOJAMIENTO son obligatorios: noches, categoría de habitación y régimen.",
+          mensaje: "Para ALOJAMIENTO son obligatorios: noches, categoría de habitación y régimen.",
         });
       }
 
       if (regimen === "OTRO" && !String(a.regimen_otro || "").trim()) {
-        return res
-          .status(400)
-          .json({ ok: false, mensaje: "Régimen OTRO requiere especificar regimen_otro." });
+        return res.status(400).json({
+          ok: false,
+          mensaje: "Régimen OTRO requiere especificar regimen_otro.",
+        });
       }
       if (catHab === "OTRO" && !String(a.categoria_hab_otro || "").trim()) {
         return res.status(400).json({
@@ -292,7 +207,6 @@ router.post("/servicios", async (req, res) => {
       }
     }
 
-    // TRASLADO: origen, destino (y usa servicio.privado)
     if (tipoNombre.includes("trasl")) {
       const tr = traslado || {};
       const origen = String(tr.origen || "").trim();
@@ -305,9 +219,10 @@ router.post("/servicios", async (req, res) => {
       }
     }
 
-    // TOUR / VISITA / EXCURSIÓN: descripcion + tipo_guia + idioma
     if (tipoNombre.includes("excurs") || tipoNombre.includes("visita") || tipoNombre.includes("tour")) {
       const tu = tour || {};
+      const tipoGuia = String(tu.tipo_guia || "").trim();
+      const idiomaReal = String(tu.idioma || "").trim(); // ✅ FIX: antes estaba leyendo tu.id_servicio
 
       if (!descTrim) {
         return res.status(400).json({
@@ -315,54 +230,28 @@ router.post("/servicios", async (req, res) => {
           mensaje: "Para VISITA/EXCURSIÓN es obligatoria la descripción del servicio.",
         });
       }
-
-      const tipoGuia = String(tu.tipo_guia || "").trim();
-      const tipoGuiaOtro = String(tu.tipo_guia_otro || "").trim();
-
-      const idioma = String(tu.idioma || "").trim();
-      const idiomaOtro = String(tu.idioma_otro || "").trim();
-
-      if (!tipoGuia) {
-        return res
-          .status(400)
-          .json({ ok: false, mensaje: "Para VISITA/EXCURSIÓN falta tipo_guia." });
-      }
-      if (!idioma) {
-        return res
-          .status(400)
-          .json({ ok: false, mensaje: "Para VISITA/EXCURSIÓN falta idioma." });
-      }
-      if (tipoGuia === "OTRO" && !tipoGuiaOtro) {
-        return res.status(400).json({
-          ok: false,
-          mensaje: "tipo_guia OTRO requiere especificar tipo_guia_otro.",
-        });
-      }
-      if (idioma === "OTRO" && !idiomaOtro) {
-        return res
-          .status(400)
-          .json({ ok: false, mensaje: "idioma OTRO requiere especificar idioma_otro." });
-      }
+      if (!tipoGuia) return res.status(400).json({ ok: false, mensaje: "Para VISITA/EXCURSIÓN falta tipo_guia." });
+      if (!idiomaReal) return res.status(400).json({ ok: false, mensaje: "Para VISITA/EXCURSIÓN falta idioma." });
     }
 
-    // BOLETO: descripcion + lugar + tipo_entrada + idioma
     if (tipoNombre.includes("boleto")) {
       const be = boleto_entrada || {};
-      if (!descTrim) {
-        return res.status(400).json({
-          ok: false,
-          mensaje: "Para BOLETO es obligatoria la descripción del servicio.",
-        });
-      }
-
       const lugar = String(be.boleto_entrada || "").trim();
       const tipoEntrada = String(be.tipo_entrada || "").trim();
       const idioma = String(be.idioma || "").trim();
+      const tipoGuia = String(be.tipo_guia || "").trim();
 
-      if (!lugar || !tipoEntrada || !idioma) {
+      if (!descTrim && !lugar) {
         return res.status(400).json({
           ok: false,
-          mensaje: "Para BOLETO son obligatorios: lugar, tipo_entrada e idioma.",
+          mensaje: "Para BOLETO es obligatoria la descripción o el lugar del boleto.",
+        });
+      }
+
+      if (!lugar || !tipoEntrada || !idioma || !tipoGuia) {
+        return res.status(400).json({
+          ok: false,
+          mensaje: "Para BOLETO son obligatorios: lugar, tipo_entrada, tipo_guia e idioma.",
         });
       }
 
@@ -374,9 +263,32 @@ router.post("/servicios", async (req, res) => {
       }
     }
 
+    // ==========================
+    // ✅ Construimos nombre_wtravel automático con TU formato
+    // ==========================
+    const payloadForText = {
+      privado: !!privado,
+      descripcion: descTrim || null,
+      link_reserva: link_reserva ? String(link_reserva).trim() : null,
+      tiempo_servicio: tiempo_servicio ? String(tiempo_servicio).trim() : null,
+      alojamiento: alojamiento || null,
+      boleto_entrada: boleto_entrada || null,
+      vuelo: vuelo || null,
+      tren: tren || null,
+      traslado: traslado || null,
+      tour: tour || null,
+    };
+
+    let nombreAuto = buildNombreWtravel(payloadForText);
+
+    // fallback fuerte (nunca guardar vacío)
+    if (!String(nombreAuto || "").trim()) {
+      nombreAuto = descTrim || `Servicio tipo ${Number(id_tipo)}`;
+    }
+
     await conn.beginTransaction();
 
-    // 1) Insert servicio
+    // 1) Insert servicio (nombre_wtravel = automático)
     const [ins] = await conn.execute(
       `
       INSERT INTO servicio (
@@ -389,7 +301,7 @@ router.post("/servicios", async (req, res) => {
         Number(id_tipo),
         Number(id_proveedor),
         Number(id_ciudad),
-        String(nombre_wtravel).trim(),
+        String(nombreAuto).trim(),
         tiempo_servicio ? String(tiempo_servicio).trim() : null,
         privado ? 1 : 0,
         descTrim || null,
@@ -399,7 +311,9 @@ router.post("/servicios", async (req, res) => {
 
     const id_servicio = ins.insertId;
 
-    // 2) Subtablas (1:1)
+    // ==========================
+    // Inserts 1:1 (detalles)
+    // ==========================
 
     // ===== ALOJAMIENTO =====
     if (alojamiento) {
@@ -407,8 +321,7 @@ router.post("/servicios", async (req, res) => {
       const regimen_otro = String(alojamiento.regimen_otro || "").trim() || null;
 
       const categoria_hotel = alojamiento.categoria_hotel ?? null;
-      const categoria_hotel_otro =
-        String(alojamiento.categoria_hotel_otro || "").trim() || null;
+      const categoria_hotel_otro = String(alojamiento.categoria_hotel_otro || "").trim() || null;
 
       const categoria_hab = alojamiento.categoria_hab ?? null;
       const categoria_hab_otro = String(alojamiento.categoria_hab_otro || "").trim() || null;
@@ -442,21 +355,19 @@ router.post("/servicios", async (req, res) => {
         ]
       );
 
-      if (regimen === "OTRO" && regimen_otro) {
-        await upsertCatalogo(conn, "aloj_regimen_otro", regimen_otro);
-      }
-      if (categoria_hotel === "OTRO" && categoria_hotel_otro) {
-        await upsertCatalogo(conn, "aloj_categoria_hotel_otro", categoria_hotel_otro);
-      }
-      if (categoria_hab === "OTRO" && categoria_hab_otro) {
-        await upsertCatalogo(conn, "aloj_categoria_hab_otro", categoria_hab_otro);
-      }
+      // auto-aprendizaje catálogos
+      if (regimen === "OTRO" && regimen_otro) await upsertCatalogo(conn, "aloj_regimen_otro", regimen_otro);
+      if (categoria_hotel === "OTRO" && categoria_hotel_otro) await upsertCatalogo(conn, "aloj_categoria_hotel_otro", categoria_hotel_otro);
+      if (categoria_hab === "OTRO" && categoria_hab_otro) await upsertCatalogo(conn, "aloj_categoria_hab_otro", categoria_hab_otro);
     }
 
     // ===== BOLETO =====
     if (boleto_entrada) {
       const tipo_entrada = String(boleto_entrada.tipo_entrada || "").trim() || null;
       const tipo_entrada_otro = String(boleto_entrada.tipo_entrada_otro || "").trim() || null;
+
+      const tipo_guia = String(boleto_entrada.tipo_guia || "").trim() || null;
+      const idioma = String(boleto_entrada.idioma || "").trim() || null;
 
       await conn.execute(
         `
@@ -466,8 +377,9 @@ router.post("/servicios", async (req, res) => {
           tipo_entrada,
           tipo_entrada_otro,
           audioguia,
+          tipo_guia,
           idioma
-        ) VALUES (?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
         `,
         [
           id_servicio,
@@ -475,13 +387,21 @@ router.post("/servicios", async (req, res) => {
           tipo_entrada,
           tipo_entrada === "OTRA" ? tipo_entrada_otro : null,
           boleto_entrada.audioguia ? 1 : 0,
-          boleto_entrada.idioma || null,
+          tipo_guia,
+          idioma,
         ]
       );
 
-      if (tipo_entrada === "OTRA" && tipo_entrada_otro) {
-        await upsertCatalogo(conn, "boleto_tipo_entrada_otro", tipo_entrada_otro);
+      if (tipo_entrada === "OTRA" && tipo_entrada_otro) await upsertCatalogo(conn, "boleto_tipo_entrada_otro", tipo_entrada_otro);
+      if (idioma) await upsertCatalogo(conn, "idiomas", idioma);
+
+      // si el tipo_guia viene raro, lo guardas como “otro” (opcional)
+      if (tipo_guia && !["guia", "audioguia", "ninguno"].includes(tipo_guia.toLowerCase())) {
+        await upsertCatalogo(conn, "boleto_tipo_guia_otro", tipo_guia);
       }
+
+      // lugar también lo puedes “aprender” si quieres
+      if (boleto_entrada.boleto_entrada) await upsertCatalogo(conn, "boleto_lugar", boleto_entrada.boleto_entrada);
     }
 
     // ===== VUELO =====
@@ -493,6 +413,12 @@ router.post("/servicios", async (req, res) => {
         clase: String(vuelo.clase || "").trim(),
         equipaje: String(vuelo.equipaje || "").trim(),
       });
+
+      // auto-aprendizaje
+      if (vuelo.origen) await upsertCatalogo(conn, "vuelo_origen", vuelo.origen);
+      if (vuelo.destino) await upsertCatalogo(conn, "vuelo_destino", vuelo.destino);
+      if (vuelo.clase) await upsertCatalogo(conn, "vuelo_clase", vuelo.clase);
+      if (vuelo.equipaje) await upsertCatalogo(conn, "vuelo_equipaje", vuelo.equipaje);
     }
 
     // ===== TREN =====
@@ -502,10 +428,15 @@ router.post("/servicios", async (req, res) => {
         destino: String(tren.destino || "").trim(),
         escalas: tren.escalas ?? 0,
         clase: String(tren.clase || "").trim(),
-        // si existe en tu tabla lo guarda, si no, lo ignora
         equipaje: tren.equipaje ? String(tren.equipaje).trim() : null,
         sillas_reservadas: tren.sillas_reservadas ? 1 : 0,
       });
+
+      // auto-aprendizaje
+      if (tren.origen) await upsertCatalogo(conn, "tren_origen", tren.origen);
+      if (tren.destino) await upsertCatalogo(conn, "tren_destino", tren.destino);
+      if (tren.clase) await upsertCatalogo(conn, "tren_clase", tren.clase);
+      if (tren.equipaje) await upsertCatalogo(conn, "tren_equipaje", tren.equipaje);
     }
 
     // ===== TRASLADO =====
@@ -518,31 +449,20 @@ router.post("/servicios", async (req, res) => {
       if (traslado.vehiculo === "OTRO" && traslado.vehiculo_otro) {
         await upsertCatalogo(conn, "traslado_vehiculo_otro", traslado.vehiculo_otro);
       }
+      if (traslado.origen) await upsertCatalogo(conn, "traslado_origen", traslado.origen);
+      if (traslado.destino) await upsertCatalogo(conn, "traslado_destino", traslado.destino);
     }
 
     // ===== TOUR =====
     if (tour) {
-      const tipoGuiaRaw = String(tour.tipo_guia || "").trim();
-      const tipoGuiaOtro = String(tour.tipo_guia_otro || "").trim();
-      const idiomaRaw = String(tour.idioma || "").trim();
-      const idiomaOtro = String(tour.idioma_otro || "").trim();
+      const tipo_guia = String(tour.tipo_guia || "").trim() || null;
+      const idioma = String(tour.idioma || "").trim() || null;
 
-      // Normalizar OTRO -> texto final guardable en la misma columna
-      const tipo_guia = tipoGuiaRaw === "OTRO" ? tipoGuiaOtro : tipoGuiaRaw;
-      const idioma = idiomaRaw === "OTRO" ? idiomaOtro : idiomaRaw;
+      // Insert dinámico: se adapta si tu tabla tour tiene más columnas
+      await insertDynamicOneToOne(conn, "tour", id_servicio, { ...tour, tipo_guia, idioma });
 
-      await insertDynamicOneToOne(conn, "tour", id_servicio, {
-        tipo_guia,
-        idioma,
-      });
-
-      // (Opcional) Guardar "otros" en catálogo para que el select aprenda
-      if (tipoGuiaRaw === "OTRO" && tipoGuiaOtro) {
-        await upsertCatalogo(conn, "tour_tipo_guia_otro", tipoGuiaOtro);
-      }
-      if (idiomaRaw === "OTRO" && idiomaOtro) {
-        await upsertCatalogo(conn, "tour_idioma_otro", idiomaOtro);
-      }
+      if (tipo_guia) await upsertCatalogo(conn, "tour_tipo_guia", tipo_guia);
+      if (idioma) await upsertCatalogo(conn, "idiomas", idioma);
     }
 
     await conn.commit();
@@ -550,12 +470,22 @@ router.post("/servicios", async (req, res) => {
     return res.status(201).json({
       ok: true,
       id_servicio,
+      nombre_wtravel: String(nombreAuto).trim(),
+      servicio_texto: String(nombreAuto).trim(), // ✅ para frontend (cotizacion-editar.js)
       mensaje: "Servicio creado",
     });
   } catch (e) {
-    try {
-      if (conn) await conn.rollback();
-    } catch {}
+    try { if (conn) await conn.rollback(); } catch {}
+
+    if (e && e.code === "ER_DUP_ENTRY") {
+      return res.status(400).json({
+        ok: false,
+        mensaje:
+          "El nombre generado quedó duplicado. Cambia algún campo (por ejemplo origen/destino/clase) o ajustamos el generador para agregar un sufijo.",
+        error: e.message,
+      });
+    }
+
     console.error("POST /servicios", e);
     return res.status(500).json({
       ok: false,
@@ -563,9 +493,7 @@ router.post("/servicios", async (req, res) => {
       error: e.message,
     });
   } finally {
-    try {
-      if (conn) conn.release();
-    } catch {}
+    try { if (conn) conn.release(); } catch {}
   }
 });
 
@@ -585,10 +513,7 @@ router.post("/servicios/:id/horas", async (req, res) => {
     for (const h of horas) {
       try {
         const hora = toTime(h);
-        if (!hora) {
-          errorCount++;
-          continue;
-        }
+        if (!hora) { errorCount++; continue; }
         await pool.execute("INSERT INTO serviciohora (id_servicio, hora) VALUES (?, ?)", [
           id_servicio,
           hora,
@@ -616,7 +541,7 @@ router.post("/servicios/:id/horas", async (req, res) => {
 
 /* =========================================================
    GET /api/servicios
-   ✅ ahora incluye categoria_hotel + servicio_texto lindo
+   ✅ servicio_texto = nombre_wtravel (ya viene “bonito” por el generador)
 ========================================================= */
 router.get("/servicios", async (_req, res) => {
   let conn;
@@ -639,20 +564,21 @@ router.get("/servicios", async (_req, res) => {
         pa.id     AS id_pais,
         ct.id     AS id_continente,
 
-        -- alojamiento (✅ agregar categoria_hotel)
-        a.noches             AS aloj_noches,
-        a.regimen            AS aloj_regimen,
-        a.regimen_otro       AS aloj_regimen_otro,
-        a.categoria_hotel    AS aloj_categoria_hotel,
+        -- alojamiento
+        a.noches               AS aloj_noches,
+        a.regimen              AS aloj_regimen,
+        a.regimen_otro         AS aloj_regimen_otro,
+        a.categoria_hotel      AS aloj_categoria_hotel,
         a.categoria_hotel_otro AS aloj_categoria_hotel_otro,
-        a.categoria_hab      AS aloj_categoria_hab,
-        a.categoria_hab_otro AS aloj_categoria_hab_otro,
+        a.categoria_hab        AS aloj_categoria_hab,
+        a.categoria_hab_otro   AS aloj_categoria_hab_otro,
 
         -- boleto
         be.boleto_entrada    AS be_lugar,
         be.tipo_entrada      AS be_tipo,
         be.tipo_entrada_otro AS be_tipo_otro,
         be.audioguia         AS be_audioguia,
+        be.tipo_guia         AS be_tipo_guia,
         be.idioma            AS be_idioma,
 
         -- vuelo
@@ -693,97 +619,11 @@ router.get("/servicios", async (_req, res) => {
       ORDER BY s.nombre_wtravel
     `);
 
-    function buildServicioTexto(s) {
-      const tipo = (s.tipo || "").toLowerCase();
-
-      // ✅ ALOJAMIENTO: "3 noches, hotel 4 estrellas económico, habitación estándar, desayuno diario"
-      if (tipo.includes("aloj")) {
-        const noches = s.aloj_noches;
-
-        const catHotel = pickOtro(s.aloj_categoria_hotel, s.aloj_categoria_hotel_otro);
-        const catHab = pickOtro(s.aloj_categoria_hab, s.aloj_categoria_hab_otro);
-        const regimen = pickOtro(s.aloj_regimen, s.aloj_regimen_otro);
-
-        const partes = [
-          nochesTxt(noches),
-          catHotel ? prettyCategoriaHotel(catHotel) : null,
-          catHab ? prettyCategoriaHab(catHab) : null,
-          regimen ? prettyRegimen(regimen) : null,
-        ].filter(Boolean);
-
-        if (partes.length) return partes.join(", ");
-      }
-
-      // TRASLADO: "Traslado <privado/compartido> <origen> – <destino>"
-      if (tipo.includes("trasl") && (s.traslado_origen || s.traslado_destino)) {
-        const privTxt = toPrivadoTexto(!!s.privado);
-        return `Traslado ${privTxt} ${s.traslado_origen || "origen"} – ${
-          s.traslado_destino || "destino"
-        }`;
-      }
-
-      // VISITA/EXCURSIÓN: "<descripcion>, <privado/en grupo>, <tiempo_servicio>, <tipo_guia> en <idioma>"
-      if (tipo.includes("excurs") || tipo.includes("visita") || tipo.includes("tour")) {
-        const desc =
-          String(s.descripcion || "").trim() || (s.nombre_wtravel || `Servicio #${s.id}`);
-        const grupoTxt = toGrupoTexto(!!s.privado);
-
-        const tiempoTxt = String(s.tiempo_servicio || "").trim();
-        const tipoGuia = String(s.tour_tipo_guia || "").trim();
-        const idioma = String(s.tour_idioma || "").trim();
-
-        const partes = [
-          desc,
-          grupoTxt,
-          tiempoTxt,
-          tipoGuia && idioma ? `${tipoGuia} en ${idioma}` : tipoGuia || idioma || "",
-        ].filter(Boolean);
-
-        return partes.join(", ");
-      }
-
-      // BOLETO: "<descripcion>, <tipo_entrada>, <tipo_guia> en <idioma>"
-      if (tipo.includes("boleto") && (s.be_tipo || s.be_lugar || s.be_idioma)) {
-        const desc = String(s.descripcion || "").trim() || "Entrada";
-        const tipoEntrada = s.be_tipo === "OTRA" && s.be_tipo_otro ? s.be_tipo_otro : s.be_tipo;
-        const tipoGuia =
-          s.be_audioguia != null && Number(s.be_audioguia) === 1 ? "audioguía" : "guía";
-        const idioma = s.be_idioma || "idioma";
-        return `${desc}, ${tipoEntrada || "tipo de entrada"}, ${tipoGuia} en ${idioma}`;
-      }
-
-      // TREN: "Tren <escalas> <origen> – <destino>, clase X, sillas reservadas/sin sillas reservadas"
-      if (tipo.includes("tren") && (s.tren_origen || s.tren_destino)) {
-        const esc = textoEscalas(s.tren_escalas);
-        const base = `Tren ${esc} ${s.tren_origen || "origen"} – ${s.tren_destino || "destino"}`;
-        const clase = s.tren_clase ? `, clase ${s.tren_clase}` : "";
-        let sillas = "";
-        if (s.tren_sillas_reservadas != null) {
-          sillas = s.tren_sillas_reservadas ? ", sillas reservadas" : ", sin sillas reservadas";
-        }
-        return `${base}${clase}${sillas}`;
-      }
-
-      // VUELO: "Vuelo <escalas> <origen> – <destino>, clase X, equipaje Y"
-      if (tipo.includes("vuelo") && (s.vuelo_origen || s.vuelo_destino)) {
-        const esc = textoEscalas(s.vuelo_escalas);
-        const base = `Vuelo ${esc} ${s.vuelo_origen || "origen"} – ${
-          s.vuelo_destino || "destino"
-        }`;
-        const clase = s.vuelo_clase ? `, clase ${s.vuelo_clase}` : "";
-        const equipaje = s.vuelo_equipaje ? `, equipaje ${s.vuelo_equipaje}` : "";
-        return `${base}${clase}${equipaje}`;
-      }
-
-      return s.nombre_wtravel || `Servicio #${s.id}`;
-    }
-
     const rowsFinal = rows.map((r) => ({
       ...r,
-      servicio_texto: buildServicioTexto(r),
+      servicio_texto: r.nombre_wtravel || `Servicio #${r.id}`,
     }));
 
-    // ✅ devolver consistente
     return res.json({ ok: true, servicios: rowsFinal });
   } catch (e) {
     console.error("GET /servicios", e);
@@ -793,9 +633,7 @@ router.get("/servicios", async (_req, res) => {
       error: e.message,
     });
   } finally {
-    try {
-      if (conn) conn.release();
-    } catch {}
+    try { if (conn) conn.release(); } catch {}
   }
 });
 
@@ -869,6 +707,7 @@ router.get("/servicios/:id", async (req, res) => {
         tipo_entrada,
         tipo_entrada_otro,
         audioguia,
+        tipo_guia,
         idioma
       FROM boleto_entrada
       WHERE id_servicio = ?
@@ -917,6 +756,7 @@ router.get("/servicios/:id", async (req, res) => {
         id_proveedor: base.id_proveedor,
         id_ciudad: base.id_ciudad,
         nombre_wtravel: base.nombre_wtravel,
+        servicio_texto: base.nombre_wtravel, // ✅ compat
         tiempo_servicio: base.tiempo_servicio,
         privado: !!base.privado,
         descripcion: base.descripcion,
@@ -938,32 +778,43 @@ router.get("/servicios/:id", async (req, res) => {
     console.error("GET /servicios/:id", e);
     return res.status(500).json({ ok: false, mensaje: "Error obteniendo servicio", error: e.message });
   } finally {
-    try {
-      if (conn) conn.release();
-    } catch {}
+    try { if (conn) conn.release(); } catch {}
   }
 });
 
 /* =========================================================
    PUT /api/servicio/:id
+   ✅ Update real con UPSERT en tablas 1:1
+   ✅ Recalcula nombre_wtravel con buildNombreWtravel()
 ========================================================= */
 router.put("/servicio/:id", async (req, res) => {
+  let conn;
   try {
     const id = Number(req.params.id);
-    const { id_tipo, id_proveedor, id_ciudad, nombre_wtravel, tiempo_servicio, privado, descripcion, link_reserva } =
-      req.body || {};
+    const {
+      id_tipo, id_proveedor, id_ciudad,
+      tiempo_servicio, privado, descripcion, link_reserva,
+      alojamiento, boleto_entrada, vuelo, tren, traslado, tour
+    } = req.body || {};
 
-    if (!id || !id_tipo || !id_proveedor || !id_ciudad || !nombre_wtravel) {
+    if (!id || !id_tipo || !id_proveedor || !id_ciudad) {
       return res.status(400).json({ ok: false, mensaje: "faltan campos obligatorios" });
     }
 
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+
+    const descTrim = descripcion ? String(descripcion).trim() : null;
     const priv = privado ? 1 : 0;
 
-    const [r] = await pool.execute(
+    // =========================
+    // 1) UPDATE tabla servicio (sin nombre_wtravel todavía)
+    // =========================
+    const [r] = await conn.execute(
       `
       UPDATE servicio
       SET id_tipo=?, id_proveedor=?, id_ciudad=?,
-          nombre_wtravel=?, tiempo_servicio=?, privado=?,
+          tiempo_servicio=?, privado=?,
           descripcion=?, link_reserva=?
       WHERE id=?
       `,
@@ -971,24 +822,382 @@ router.put("/servicio/:id", async (req, res) => {
         id_tipo,
         id_proveedor,
         id_ciudad,
-        String(nombre_wtravel).trim(),
         tiempo_servicio ? String(tiempo_servicio).trim() : null,
         priv,
-        descripcion ? String(descripcion).trim() : null,
+        descTrim,
         link_reserva ? String(link_reserva).trim() : null,
         id,
       ]
     );
 
-    if (!r.affectedRows) return res.status(404).json({ ok: false, mensaje: "Servicio no encontrado" });
+    if (!r.affectedRows) {
+      await conn.rollback();
+      return res.status(404).json({ ok: false, mensaje: "Servicio no encontrado" });
+    }
 
-    res.json({ ok: true, mensaje: "Servicio actualizado" });
+    // =========================================================
+    // 2) UPSERTs reales por tabla detalle (1:1)
+    // =========================================================
+
+    // ===== ALOJAMIENTO =====
+    if (alojamiento) {
+      const noches = Number(alojamiento.noches);
+      const habitaciones = Number(alojamiento.habitaciones ?? 1);
+
+      const regimen = alojamiento.regimen ?? null;
+      const regimen_otro = String(alojamiento.regimen_otro || "").trim() || null;
+
+      const categoria_hotel = alojamiento.categoria_hotel ?? null;
+      const categoria_hotel_otro = String(alojamiento.categoria_hotel_otro || "").trim() || null;
+
+      const categoria_hab = alojamiento.categoria_hab ?? null;
+      const categoria_hab_otro = String(alojamiento.categoria_hab_otro || "").trim() || null;
+
+      if (!Number.isFinite(noches) || noches <= 0) {
+        await conn.rollback();
+        return res.status(400).json({ ok: false, mensaje: "ALOJAMIENTO: noches inválidas" });
+      }
+      if (!categoria_hab) {
+        await conn.rollback();
+        return res.status(400).json({ ok: false, mensaje: "ALOJAMIENTO: falta categoria_hab" });
+      }
+      if (!regimen) {
+        await conn.rollback();
+        return res.status(400).json({ ok: false, mensaje: "ALOJAMIENTO: falta regimen" });
+      }
+      if (regimen === "OTRO" && !regimen_otro) {
+        await conn.rollback();
+        return res.status(400).json({ ok: false, mensaje: "ALOJAMIENTO: regimen OTRO requiere regimen_otro" });
+      }
+      if (categoria_hab === "OTRO" && !categoria_hab_otro) {
+        await conn.rollback();
+        return res.status(400).json({ ok: false, mensaje: "ALOJAMIENTO: categoria_hab OTRO requiere categoria_hab_otro" });
+      }
+      if (categoria_hotel === "OTRO" && !categoria_hotel_otro) {
+        await conn.rollback();
+        return res.status(400).json({ ok: false, mensaje: "ALOJAMIENTO: categoria_hotel OTRO requiere categoria_hotel_otro" });
+      }
+
+      await conn.execute(
+        `
+        INSERT INTO alojamiento (
+          id_servicio,
+          noches, habitaciones,
+          regimen, regimen_otro,
+          categoria_hotel, categoria_hotel_otro,
+          categoria_hab, categoria_hab_otro,
+          proveedor_hotel
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          noches = VALUES(noches),
+          habitaciones = VALUES(habitaciones),
+          regimen = VALUES(regimen),
+          regimen_otro = VALUES(regimen_otro),
+          categoria_hotel = VALUES(categoria_hotel),
+          categoria_hotel_otro = VALUES(categoria_hotel_otro),
+          categoria_hab = VALUES(categoria_hab),
+          categoria_hab_otro = VALUES(categoria_hab_otro),
+          proveedor_hotel = VALUES(proveedor_hotel)
+        `,
+        [
+          id,
+          noches,
+          Number.isFinite(habitaciones) && habitaciones > 0 ? habitaciones : 1,
+          regimen,
+          regimen === "OTRO" ? regimen_otro : null,
+          categoria_hotel,
+          categoria_hotel === "OTRO" ? categoria_hotel_otro : null,
+          categoria_hab,
+          categoria_hab === "OTRO" ? categoria_hab_otro : null,
+          alojamiento.proveedor_hotel ?? null,
+        ]
+      );
+
+      // opcional: “aprendizaje” de catálogos (si quieres)
+      if (regimen === "OTRO" && regimen_otro) await upsertCatalogo(conn, "aloj_regimen_otro", regimen_otro);
+      if (categoria_hotel === "OTRO" && categoria_hotel_otro) await upsertCatalogo(conn, "aloj_categoria_hotel_otro", categoria_hotel_otro);
+      if (categoria_hab === "OTRO" && categoria_hab_otro) await upsertCatalogo(conn, "aloj_categoria_hab_otro", categoria_hab_otro);
+    }
+
+    // ===== BOLETO =====
+    if (boleto_entrada) {
+      const lugar = String(boleto_entrada.boleto_entrada || "").trim();
+      const tipo_entrada = String(boleto_entrada.tipo_entrada || "").trim();
+      const tipo_entrada_otro = String(boleto_entrada.tipo_entrada_otro || "").trim() || null;
+      const tipo_guia = String(boleto_entrada.tipo_guia || "").trim();
+      const idioma = String(boleto_entrada.idioma || "").trim();
+      const audioguia = boleto_entrada.audioguia ? 1 : 0;
+
+      if (!lugar || !tipo_entrada || !tipo_guia || !idioma) {
+        await conn.rollback();
+        return res.status(400).json({
+          ok: false,
+          mensaje: "BOLETO: obligatorios boleto_entrada, tipo_entrada, tipo_guia e idioma.",
+        });
+      }
+      if (tipo_entrada === "OTRA" && !tipo_entrada_otro) {
+        await conn.rollback();
+        return res.status(400).json({
+          ok: false,
+          mensaje: "BOLETO: tipo_entrada OTRA requiere tipo_entrada_otro.",
+        });
+      }
+
+      await conn.execute(
+        `
+        INSERT INTO boleto_entrada (
+          id_servicio,
+          boleto_entrada,
+          tipo_entrada,
+          tipo_entrada_otro,
+          audioguia,
+          tipo_guia,
+          idioma
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          boleto_entrada = VALUES(boleto_entrada),
+          tipo_entrada = VALUES(tipo_entrada),
+          tipo_entrada_otro = VALUES(tipo_entrada_otro),
+          audioguia = VALUES(audioguia),
+          tipo_guia = VALUES(tipo_guia),
+          idioma = VALUES(idioma)
+        `,
+        [
+          id,
+          lugar,
+          tipo_entrada,
+          tipo_entrada === "OTRA" ? tipo_entrada_otro : null,
+          audioguia,
+          tipo_guia,
+          idioma,
+        ]
+      );
+
+      if (tipo_entrada === "OTRA" && tipo_entrada_otro) await upsertCatalogo(conn, "boleto_tipo_entrada_otro", tipo_entrada_otro);
+      if (idioma) await upsertCatalogo(conn, "idiomas", idioma);
+    }
+
+    // ===== VUELO =====
+    if (vuelo) {
+      const origen = String(vuelo.origen || "").trim();
+      const destino = String(vuelo.destino || "").trim();
+      const clase = String(vuelo.clase || "").trim() || null;
+      const equipaje = String(vuelo.equipaje || "").trim() || null;
+      const escalas = vuelo.escalas;
+
+      if (!origen || !destino || escalas === undefined || escalas === null || escalas === "") {
+        await conn.rollback();
+        return res.status(400).json({
+          ok: false,
+          mensaje: "VUELO: obligatorios escalas, origen y destino.",
+        });
+      }
+
+      await conn.execute(
+        `
+        INSERT INTO vuelo (id_servicio, origen, destino, escalas, clase, equipaje)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          origen = VALUES(origen),
+          destino = VALUES(destino),
+          escalas = VALUES(escalas),
+          clase = VALUES(clase),
+          equipaje = VALUES(equipaje)
+        `,
+        [id, origen, destino, Number(escalas), clase, equipaje]
+      );
+    }
+
+    // ===== TREN =====
+    if (tren) {
+      const origen = String(tren.origen || "").trim();
+      const destino = String(tren.destino || "").trim();
+      const clase = String(tren.clase || "").trim() || null;
+      const equipaje = tren.equipaje != null ? String(tren.equipaje).trim() : null;
+      const escalas = tren.escalas;
+
+      const hasSillas =
+        tren.sillas_reservadas !== undefined &&
+        tren.sillas_reservadas !== null &&
+        String(tren.sillas_reservadas) !== "";
+
+      if (!origen || !destino || escalas === undefined || escalas === null || escalas === "" || !hasSillas) {
+        await conn.rollback();
+        return res.status(400).json({
+          ok: false,
+          mensaje: "TREN: obligatorios escalas, origen, destino y sillas_reservadas.",
+        });
+      }
+
+      const sillas = String(tren.sillas_reservadas) === "1" || tren.sillas_reservadas === true ? 1 : 0;
+
+      await conn.execute(
+        `
+        INSERT INTO tren (id_servicio, origen, destino, escalas, clase, equipaje, sillas_reservadas)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          origen = VALUES(origen),
+          destino = VALUES(destino),
+          escalas = VALUES(escalas),
+          clase = VALUES(clase),
+          equipaje = VALUES(equipaje),
+          sillas_reservadas = VALUES(sillas_reservadas)
+        `,
+        [id, origen, destino, Number(escalas), clase, equipaje, sillas]
+      );
+    }
+
+    // ===== TRASLADO =====
+    if (traslado) {
+      const origen = String(traslado.origen || "").trim();
+      const destino = String(traslado.destino || "").trim();
+
+      if (!origen || !destino) {
+        await conn.rollback();
+        return res.status(400).json({ ok: false, mensaje: "TRASLADO: obligatorios origen y destino." });
+      }
+
+      const tipo_traslado = traslado.tipo_traslado ?? null;
+      const tipo_traslado_otro = String(traslado.tipo_traslado_otro || "").trim() || null;
+
+      const vehiculo = traslado.vehiculo ?? null;
+      const vehiculo_otro = String(traslado.vehiculo_otro || "").trim() || null;
+
+      await conn.execute(
+        `
+        INSERT INTO traslado (
+          id_servicio,
+          origen, destino,
+          tipo_traslado, tipo_traslado_otro,
+          vehiculo, vehiculo_otro,
+          nota
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          origen = VALUES(origen),
+          destino = VALUES(destino),
+          tipo_traslado = VALUES(tipo_traslado),
+          tipo_traslado_otro = VALUES(tipo_traslado_otro),
+          vehiculo = VALUES(vehiculo),
+          vehiculo_otro = VALUES(vehiculo_otro),
+          nota = VALUES(nota)
+        `,
+        [
+          id,
+          origen,
+          destino,
+          tipo_traslado,
+          tipo_traslado === "OTRO" ? tipo_traslado_otro : null,
+          vehiculo,
+          vehiculo === "OTRO" ? vehiculo_otro : null,
+          traslado.nota ? String(traslado.nota).trim() : null,
+        ]
+      );
+
+      if (tipo_traslado === "OTRO" && tipo_traslado_otro) await upsertCatalogo(conn, "traslado_tipo_otro", tipo_traslado_otro);
+      if (vehiculo === "OTRO" && vehiculo_otro) await upsertCatalogo(conn, "traslado_vehiculo_otro", vehiculo_otro);
+      if (origen) await upsertCatalogo(conn, "traslado_origen", origen);
+      if (destino) await upsertCatalogo(conn, "traslado_destino", destino);
+    }
+
+    // ===== TOUR =====
+    if (tour) {
+      const tipo_guia = String(tour.tipo_guia || "").trim() || null;
+      const tipo_guia_otro = String(tour.tipo_guia_otro || "").trim() || null;
+
+      const idioma = String(tour.idioma || "").trim() || null;
+      const idioma_otro = String(tour.idioma_otro || "").trim() || null;
+
+      if (!tipo_guia) {
+        await conn.rollback();
+        return res.status(400).json({ ok: false, mensaje: "TOUR: falta tipo_guia." });
+      }
+      if (!idioma) {
+        await conn.rollback();
+        return res.status(400).json({ ok: false, mensaje: "TOUR: falta idioma." });
+      }
+
+      const duracion_min =
+        tour.duracion_min !== undefined && tour.duracion_min !== null && String(tour.duracion_min) !== ""
+          ? Number(tour.duracion_min)
+          : null;
+
+      await conn.execute(
+        `
+        INSERT INTO tour (
+          id_servicio,
+          duracion_min,
+          tipo_guia,
+          tipo_guia_otro,
+          idioma,
+          idioma_otro
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          duracion_min = VALUES(duracion_min),
+          tipo_guia = VALUES(tipo_guia),
+          tipo_guia_otro = VALUES(tipo_guia_otro),
+          idioma = VALUES(idioma),
+          idioma_otro = VALUES(idioma_otro)
+        `,
+        [
+          id,
+          Number.isFinite(duracion_min) ? duracion_min : null,
+          tipo_guia,
+          tipo_guia === "OTRO" ? tipo_guia_otro : null,
+          idioma,
+          idioma === "OTRO" ? idioma_otro : null,
+        ]
+      );
+
+      if (tipo_guia) await upsertCatalogo(conn, "tour_tipo_guia", tipo_guia);
+      if (idioma) await upsertCatalogo(conn, "idiomas", idioma);
+    }
+
+    // =========================================================
+    // 3) Recalcular nombre_wtravel con los detalles del body
+    // =========================================================
+    let nombreAuto = buildNombreWtravel({
+      privado: !!privado,
+      descripcion: descTrim,
+      tiempo_servicio: tiempo_servicio ? String(tiempo_servicio).trim() : null,
+      link_reserva: link_reserva ? String(link_reserva).trim() : null,
+      alojamiento: alojamiento || null,
+      boleto_entrada: boleto_entrada || null,
+      vuelo: vuelo || null,
+      tren: tren || null,
+      traslado: traslado || null,
+      tour: tour || null,
+    });
+
+    if (!String(nombreAuto || "").trim()) {
+      nombreAuto = descTrim || null;
+    }
+
+    if (nombreAuto) {
+      await conn.execute(
+        `UPDATE servicio SET nombre_wtravel=? WHERE id=?`,
+        [String(nombreAuto).trim(), id]
+      );
+    }
+
+    await conn.commit();
+
+    return res.json({
+      ok: true,
+      mensaje: "Servicio actualizado",
+      nombre_wtravel: nombreAuto ? String(nombreAuto).trim() : null,
+    });
   } catch (e) {
-    if (e.code === "ER_DUP_ENTRY") return res.status(400).json({ ok: false, mensaje: "nombre_wtravel duplicado" });
+    try { if (conn) await conn.rollback(); } catch {}
+    if (e.code === "ER_DUP_ENTRY") {
+      return res.status(400).json({ ok: false, mensaje: "nombre_wtravel duplicado", error: e.message });
+    }
     console.error("PUT /servicio/:id", e);
-    res.status(500).json({ ok: false, mensaje: "Error actualizando servicio", error: e.message });
+    return res.status(500).json({ ok: false, mensaje: "Error actualizando servicio", error: e.message });
+  } finally {
+    try { if (conn) conn.release(); } catch {}
   }
 });
+
 
 /* =========================================================
    PUT /api/servicios/:id/horas
@@ -1014,15 +1223,11 @@ router.put("/servicios/:id/horas", async (req, res) => {
     await conn.commit();
     res.json({ ok: true, mensaje: "Horas actualizadas", count: horas.length });
   } catch (e) {
-    try {
-      if (conn) await conn.rollback();
-    } catch {}
+    try { if (conn) await conn.rollback(); } catch {}
     console.error("PUT /servicios/:id/horas", e);
     res.status(500).json({ ok: false, mensaje: "Error actualizando horas", error: e.message });
   } finally {
-    try {
-      if (conn) conn.release();
-    } catch {}
+    try { if (conn) conn.release(); } catch {}
   }
 });
 
@@ -1067,7 +1272,6 @@ router.delete("/servicios/:id/horas/:hora", async (req, res) => {
 
 /* =========================================================
    GET /api/servicios/:id/precios?anio=YYYY&tipo_habitacion=DBL
-   Devuelve lista de meses con precio (solo los que existan)
 ========================================================= */
 router.get("/servicios/:id/precios", async (req, res) => {
   let conn;
@@ -1108,8 +1312,6 @@ router.get("/servicios/:id/precios", async (req, res) => {
 
 /* =========================================================
    PUT /api/servicios/:id/precios?anio=YYYY&tipo_habitacion=DBL
-   Body: { precios: [ {mes:1..12, precio_usd:number|null}, ... ] }
-   Batch upsert (12 meses de una, sin 12 requests)
 ========================================================= */
 router.put("/servicios/:id/precios", async (req, res) => {
   let conn;
@@ -1130,7 +1332,6 @@ router.put("/servicios/:id/precios", async (req, res) => {
       return res.status(400).json({ ok: false, mensaje: "Body requiere precios[]" });
     }
 
-    // Normaliza por mes (por si llega repetido)
     const byMes = new Map();
     for (const p of precios) {
       const mes = Number(p?.mes);
@@ -1139,8 +1340,8 @@ router.put("/servicios/:id/precios", async (req, res) => {
       }
 
       const raw = p?.precio_usd;
-
       let precio = null;
+
       if (raw !== null && raw !== undefined && String(raw).trim() !== "") {
         const num = Number(raw);
         if (!Number.isFinite(num)) {
@@ -1149,7 +1350,6 @@ router.put("/servicios/:id/precios", async (req, res) => {
         if (num < 0) {
           return res.status(400).json({ ok: false, mensaje: `No se permiten negativos (mes ${mes})` });
         }
-        // redondeo a 2 decimales para que quede perfecto con DECIMAL(10,2)
         precio = Math.round(num * 100) / 100;
       }
 
@@ -1167,7 +1367,6 @@ router.put("/servicios/:id/precios", async (req, res) => {
     conn = await pool.getConnection();
     await conn.beginTransaction();
 
-    // Upsert en batch
     await conn.query(
       `
       INSERT INTO servicio_precio_mes (id_servicio, anio, mes, tipo_habitacion, precio_usd)

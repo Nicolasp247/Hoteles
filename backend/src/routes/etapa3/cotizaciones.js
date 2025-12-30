@@ -53,6 +53,45 @@ function getYearMonthFromYmd(fechaYmd) {
   return { y, m };
 }
 
+function ymdFromDbDate(val) {
+  if (!val) return null;
+
+  // Si ya viene como 'YYYY-MM-DD...' lo cortamos
+  if (typeof val === "string") {
+    const s = val.trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+
+    // Si es un string tipo 'Thu Feb 06 ...', intentamos parsear
+    const d = new Date(s);
+    if (!Number.isNaN(d.getTime())) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${y}-${m}-${day}`;
+    }
+    return null;
+  }
+
+  // Si viene como Date
+  if (val instanceof Date) {
+    const y = val.getFullYear();
+    const m = String(val.getMonth() + 1).padStart(2, "0");
+    const day = String(val.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+
+  // Último intento
+  const d = new Date(val);
+  if (!Number.isNaN(d.getTime())) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }
+
+  return null;
+}
+
 // Texto “Directo / X escala(s)”
 function textoEscalas(escalas) {
   const n = Number(escalas);
@@ -152,9 +191,30 @@ function buildServicioTexto(row) {
 
   // Otros tipos
   let base = row.titulo_override || textoVuelo || textoTren || row.nombre_servicio || "";
-
   if (row.es_opcional) base = `Opcional: ${base}`;
   return base;
+}
+
+// Recompactar orden_dia dentro de una fecha (1..N), para evitar huecos/raro
+async function recompactarOrdenDia(conn, idCotizacion, fechaYmd) {
+  const [rows] = await conn.execute(
+    `
+    SELECT id_item
+    FROM cotizacion_item
+    WHERE id_cotizacion = ?
+      AND fecha_servicio = ?
+    ORDER BY orden_dia ASC, id_item ASC
+    `,
+    [idCotizacion, fechaYmd]
+  );
+
+  let orden = 1;
+  for (const r of rows) {
+    await conn.execute(
+      `UPDATE cotizacion_item SET orden_dia = ? WHERE id_item = ?`,
+      [orden++, r.id_item]
+    );
+  }
 }
 
 // =======================
@@ -478,7 +538,7 @@ router.post("/cotizaciones/:id/items", async (req, res) => {
         const noches = Number(aloj.noches || 0);
         const habitaciones = Number(aloj.habitaciones || 1);
 
-        // ✅ AQUI ESTABA EL BUG: ahora sí respeta OTRO
+        // ✅ respeta OTRO
         const categoriaHotel = pickOtro(aloj.categoria_hotel, aloj.categoria_hotel_otro);
         const categoriaHab   = pickOtro(aloj.categoria_hab, aloj.categoria_hab_otro);
         const regimen        = pickOtro(aloj.regimen, aloj.regimen_otro);
@@ -727,6 +787,78 @@ router.put("/cotizaciones/:id/items/orden", async (req, res) => {
       mensaje: "Error guardando el orden.",
       error: error.message
     });
+  } finally {
+    try { if (conn) conn.release(); } catch {}
+  }
+});
+
+// =========================================================
+// PUT /api/cotizaciones/items/:id_item/fecha
+// ✅ CORREGIDO: usa db (no pool), usa id_item (no id)
+// ✅ Además recompacta orden_dia en la fecha vieja y la nueva
+// =========================================================
+router.put("/cotizaciones/items/:id_item/fecha", async (req, res) => {
+  let conn;
+  try {
+    const idItem = Number(req.params.id_item);
+    const { fecha_servicio } = req.body || {};
+
+    if (!idItem || !fecha_servicio) {
+      return res.status(400).json({ ok: false, mensaje: "Faltan campos: id_item, fecha_servicio" });
+    }
+
+    const ymd = String(fecha_servicio).slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+      return res.status(400).json({ ok: false, mensaje: "fecha_servicio debe venir como YYYY-MM-DD" });
+    }
+
+    conn = await db.getConnection();
+    await conn.beginTransaction();
+
+    // 1) Obtener cotización + fecha anterior (para recompactar)
+    const [[oldRow]] = await conn.execute(
+      `SELECT id_cotizacion, fecha_servicio FROM cotizacion_item WHERE id_item = ?`,
+      [idItem]
+    );
+
+    if (!oldRow) {
+      await conn.rollback();
+      return res.status(404).json({ ok: false, mensaje: "Item no encontrado" });
+    }
+
+    const idCotizacion = oldRow.id_cotizacion;
+    const fechaOld = ymdFromDbDate(oldRow.fecha_servicio);
+
+    if (!fechaOld) {
+      await conn.rollback();
+      return res.status(500).json({
+        ok: false,
+        mensaje: "No se pudo interpretar la fecha anterior del item (fecha_servicio).",
+      });
+    }
+
+    // 2) Actualizar fecha
+    const [r] = await conn.execute(
+      `UPDATE cotizacion_item SET fecha_servicio = ? WHERE id_item = ?`,
+      [ymd, idItem]
+    );
+
+    if (!r.affectedRows) {
+      await conn.rollback();
+      return res.status(404).json({ ok: false, mensaje: "Item no encontrado" });
+    }
+
+    // 3) Recompactar orden dentro de las fechas afectadas
+    await recompactarOrdenDia(conn, idCotizacion, fechaOld);
+    await recompactarOrdenDia(conn, idCotizacion, ymd);
+
+    await conn.commit();
+    return res.json({ ok: true, mensaje: "Fecha actualizada", fecha_servicio: ymd });
+
+  } catch (e) {
+    try { if (conn) await conn.rollback(); } catch {}
+    console.error("PUT /cotizaciones/items/:id_item/fecha", e);
+    return res.status(500).json({ ok: false, mensaje: "Error actualizando fecha", error: e.message });
   } finally {
     try { if (conn) conn.release(); } catch {}
   }
