@@ -462,6 +462,147 @@ document.addEventListener("DOMContentLoaded", () => {
     return nombre.toLowerCase().includes("aloj");
   }
 
+  function upsertOptionIntoSelect(selectEl, value, { keepWriteOption=true } = {}) {
+    if (!selectEl || !value) return;
+
+    const v = String(value).trim();
+    if (!v) return;
+
+    const opts = Array.from(selectEl.options || []);
+    const exists = opts.some(o => String(o.value).trim().toLowerCase() === v.toLowerCase());
+
+    if (!exists) {
+      // Insertar antes de "__write__" si existe
+      const writeOpt = opts.find(o => o.value === "__write__");
+      const newOpt = new Option(v, v);
+
+      if (writeOpt && keepWriteOption) {
+        selectEl.insertBefore(newOpt, writeOpt);
+      } else {
+        selectEl.add(newOpt);
+      }
+    }
+
+    selectEl.value = v;
+  }
+
+  function invalidateCatalog(grupo) {
+    if (!grupo) return;
+    delete catalogCache[grupo];
+  }
+
+  // Esta es la que llamas después de guardar exitosamente
+  function refreshCatalogosAfterSave(tipoLower, payload) {
+    // === TIEMPO SERVICIO ===
+    if (payload?.tiempo_servicio) {
+      invalidateCatalog("tiempo_servicio");
+      upsertOptionIntoSelect($("edit-tiempo-servicio-select"), payload.tiempo_servicio);
+      // ocultar txt si existe
+      if ($("edit-tiempo-servicio-txt")) $("edit-tiempo-servicio-txt").style.display = "none";
+    }
+
+    // === BOLETO ===
+    if (tipoLower.includes("boleto") && payload?.boleto_entrada) {
+      const b = payload.boleto_entrada;
+
+      if (b.boleto_entrada) {
+        invalidateCatalog("boleto_lugar");
+        upsertOptionIntoSelect($("edit-be-lugar-select"), b.boleto_entrada);
+        if ($("edit-be-lugar-txt")) $("edit-be-lugar-txt").style.display = "none";
+      }
+
+      // idioma en boleto
+      if (b.idioma) {
+        invalidateCatalog("idiomas");
+        upsertOptionIntoSelect($("edit-be-idioma"), b.idioma);
+        if ($("edit-be-idioma-txt")) $("edit-be-idioma-txt").style.display = "none";
+      }
+
+      // tipo_entrada_otro si aplica
+      if (b.tipo_entrada === "OTRA" && b.tipo_entrada_otro) {
+        // aquí no es catálogo, pero sí select local: lo insertamos
+        upsertOptionIntoSelect($("edit-be-tipo-entrada"), b.tipo_entrada_otro);
+        if ($("edit-be-tipo-entrada-txt")) $("edit-be-tipo-entrada-txt").style.display = "none";
+      }
+
+      // tipo_guia si es escrito
+      if (b.tipo_guia && b.tipo_guia !== "GUIA" && b.tipo_guia !== "AUDIOGUIA" && b.tipo_guia !== "NINGUNO") {
+        upsertOptionIntoSelect($("edit-be-tipo-guia"), b.tipo_guia);
+        if ($("edit-be-tipo-guia-txt")) $("edit-be-tipo-guia-txt").style.display = "none";
+      }
+    }
+
+    // === TOUR ===
+    if ((tipoLower.includes("excurs") || tipoLower.includes("visita") || tipoLower.includes("tour")) && payload?.tour) {
+      const t = payload.tour;
+
+      if (t.idioma && t.idioma !== "OTRO") {
+        invalidateCatalog("idiomas");
+        upsertOptionIntoSelect($("edit-tu-idioma"), t.idioma);
+        if ($("edit-tu-idioma-txt")) $("edit-tu-idioma-txt").style.display = "none";
+      }
+      if (t.idioma === "OTRO" && t.idioma_otro) {
+        invalidateCatalog("idiomas");
+        upsertOptionIntoSelect($("edit-tu-idioma"), t.idioma_otro);
+        if ($("edit-tu-idioma-txt")) $("edit-tu-idioma-txt").style.display = "none";
+      }
+
+      if (t.tipo_guia === "OTRO" && t.tipo_guia_otro) {
+        // tipo guía tour NO viene de catalogo_opcion (por ahora), igual lo metemos al select local
+        upsertOptionIntoSelect($("edit-tu-tipo-guia"), t.tipo_guia_otro);
+        if ($("edit-tu-tipo-guia-otro")) $("edit-tu-tipo-guia-otro").style.display = "none";
+      }
+    }
+
+    // === TRASLADO ===
+    if (tipoLower.includes("trasl") && payload?.traslado) {
+      const tr = payload.traslado;
+
+      if (tr.origen) {
+        invalidateCatalog("traslado_origen");
+        upsertOptionIntoSelect($("edit-trs-origen-select"), tr.origen);
+        if ($("edit-trs-origen-txt")) $("edit-trs-origen-txt").style.display = "none";
+      }
+
+      if (tr.destino) {
+        invalidateCatalog("traslado_destino");
+        upsertOptionIntoSelect($("edit-trs-destino-select"), tr.destino);
+        if ($("edit-trs-destino-txt")) $("edit-trs-destino-txt").style.display = "none";
+      }
+    }
+
+    // === VUELO ===
+    if (tipoLower.includes("vuelo") && payload?.vuelo) {
+      const v = payload.vuelo;
+
+      if (v.origen) {
+        invalidateCatalog("vuelo_origen");
+        upsertOptionIntoSelect($("edit-vu-origen"), v.origen);
+        if ($("edit-vu-origen-txt")) $("edit-vu-origen-txt").style.display = "none";
+      }
+      if (v.destino) {
+        invalidateCatalog("vuelo_destino");
+        upsertOptionIntoSelect($("edit-vu-destino"), v.destino);
+      }
+    }
+
+    // === TREN ===
+    if (tipoLower.includes("tren") && payload?.tren) {
+      const t = payload.tren;
+
+      if (t.origen) {
+        invalidateCatalog("tren_origen");
+        upsertOptionIntoSelect($("edit-tr-origen"), t.origen);
+        if ($("edit-tr-origen-txt")) $("edit-tr-origen-txt").style.display = "none";
+      }
+      if (t.destino) {
+        invalidateCatalog("tren_destino");
+        upsertOptionIntoSelect($("edit-tr-destino"), t.destino);
+        if ($("edit-tr-destino-txt")) $("edit-tr-destino-txt").style.display = "none";
+      }
+    }
+  }
+
   function inferTipoTextoFromDetalle(det) {
     const txt = String(det?.tipo || det?.tipo_servicio || "").trim();
     if (txt) return txt.toLowerCase();
@@ -1650,8 +1791,12 @@ document.addEventListener("DOMContentLoaded", () => {
   async function guardarPreciosModal() {
     setMsgModalPrecios("");
 
-    if (!modalPreciosServicioId) return setMsgModalPrecios("No hay servicio seleccionado.", true);
-    if (!modalTbodyPrecios) return setMsgModalPrecios("No encuentro la tabla de precios.", true);
+    if (!modalPreciosServicioId) {
+      return setMsgModalPrecios("No hay servicio seleccionado.", true);
+    }
+    if (!modalTbodyPrecios) {
+      return setMsgModalPrecios("No encuentro la tabla de precios.", true);
+    }
 
     const anio = getAnioUI();
     const tipoHab = getTipoHabUI();
@@ -1663,14 +1808,19 @@ document.addEventListener("DOMContentLoaded", () => {
       const mes = Number(inp.dataset.mes);
       const raw = String(inp.value || "").trim();
 
+      // vacío => NULL
       if (!raw) {
         preciosPayload.push({ mes, precio_usd: null });
         continue;
       }
 
       const n = Number(raw);
-      if (!Number.isFinite(n)) return setMsgModalPrecios(`Precio inválido en mes ${mes}.`, true);
-      if (n < 0) return setMsgModalPrecios(`No se permiten negativos (mes ${mes}).`, true);
+      if (!Number.isFinite(n)) {
+        return setMsgModalPrecios(`Precio inválido en mes ${mes}.`, true);
+      }
+      if (n < 0) {
+        return setMsgModalPrecios(`No se permiten negativos (mes ${mes}).`, true);
+      }
 
       preciosPayload.push({ mes, precio_usd: round2(n) });
     }
@@ -1681,13 +1831,16 @@ document.addEventListener("DOMContentLoaded", () => {
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ precios: preciosPayload })
+          body: JSON.stringify({ precios: preciosPayload }),
         }
       );
 
+      // fetchJSON ya lanza error si !ok, pero lo dejo por claridad
       if (!data.ok) throw new Error(data.mensaje || data.error || "Error guardando precios");
 
-      setMsgModalPrecios(`Guardado listo ✅ (upsert: ${data.upsert ?? "?"}, deleted: ${data.deleted ?? "?"})`);
+      setMsgModalPrecios(
+        `Guardado listo ✅ (upsert: ${data.upsert ?? "?"}, deleted: ${data.deleted ?? "?"})`
+      );
 
       const precios = await cargarPreciosServicio(modalPreciosServicioId);
       renderTablaPreciosModal(precios);
