@@ -14,6 +14,13 @@ function toTime(s) {
   return str;
 }
 
+function requireNumericIdParam(req, res, next) {
+  const raw = String(req.params.id || "").trim();
+  if (!/^\d+$/.test(raw)) return next(); // 👈 IMPORTANTE: no responder 400, solo saltar
+  req.params.id = raw; // normalizado
+  next();
+}
+
 // Guarda un valor en el catálogo si no existe (auto-aprendizaje)
 async function upsertCatalogo(conn, grupo, valor) {
   const v = String(valor || "").trim();
@@ -26,6 +33,36 @@ async function upsertCatalogo(conn, grupo, valor) {
 
 // ===== Helpers para inserts dinámicos (sin adivinar columnas) =====
 const _colsCache = new Map(); // key: tableName -> [cols...]
+
+async function upsertDynamicOneToOne(conn, tableName, id_servicio, obj) {
+  if (!obj || typeof obj !== "object") return false;
+
+  const cols = await getTableColumns(conn, tableName);
+  if (!cols.includes("id_servicio")) return false;
+
+  const payload = { ...obj, id_servicio };
+
+  // solo columnas existentes
+  const keys = Object.keys(payload).filter((k) => cols.includes(k));
+  if (keys.length === 0) return false;
+
+  const placeholders = keys.map(() => "?").join(", ");
+  const updates = keys
+    .filter((k) => k !== "id_servicio")
+    .map((k) => `${k} = VALUES(${k})`)
+    .join(", ");
+
+  const sql = `
+    INSERT INTO ${tableName} (${keys.join(", ")})
+    VALUES (${placeholders})
+    ON DUPLICATE KEY UPDATE ${updates || "id_servicio = id_servicio"}
+  `;
+
+  const values = keys.map((k) => payload[k]);
+  await conn.execute(sql, values);
+  return true;
+}
+
 
 async function getTableColumns(conn, tableName) {
   if (_colsCache.has(tableName)) return _colsCache.get(tableName);
@@ -44,6 +81,36 @@ async function getTableColumns(conn, tableName) {
   _colsCache.set(tableName, cols);
   return cols;
 }
+
+async function upsertDynamicOneToOne(conn, tableName, id_servicio, obj) {
+  if (!obj || typeof obj !== "object") return false;
+
+  const cols = await getTableColumns(conn, tableName);
+  if (!cols.includes("id_servicio")) return false;
+
+  const payload = { ...obj, id_servicio };
+
+  // solo columnas existentes
+  const keys = Object.keys(payload).filter((k) => cols.includes(k));
+  if (keys.length === 0) return false;
+
+  const placeholders = keys.map(() => "?").join(", ");
+  const updates = keys
+    .filter((k) => k !== "id_servicio")
+    .map((k) => `${k} = VALUES(${k})`)
+    .join(", ");
+
+  const sql = `
+    INSERT INTO ${tableName} (${keys.join(", ")})
+    VALUES (${placeholders})
+    ON DUPLICATE KEY UPDATE ${updates || "id_servicio = id_servicio"}
+  `;
+
+  const values = keys.map((k) => payload[k]);
+  await conn.execute(sql, values);
+  return true;
+}
+
 
 async function insertDynamicOneToOne(conn, tableName, id_servicio, obj) {
   // Inserta en tableName con id_servicio + SOLO columnas existentes
@@ -640,7 +707,7 @@ router.get("/servicios", async (_req, res) => {
 /* =========================================================
    GET /api/servicios/:id
 ========================================================= */
-router.get("/servicios/:id", async (req, res) => {
+router.get("/servicios/:id", requireNumericIdParam, async (req, res) => {
   let conn;
   try {
     conn = await pool.getConnection();
@@ -786,8 +853,9 @@ router.get("/servicios/:id", async (req, res) => {
    PUT /api/servicio/:id
    ✅ Update real con UPSERT en tablas 1:1
    ✅ Recalcula nombre_wtravel con buildNombreWtravel()
+   ✅ Alias: PUT /api/servicios/:id (para no romper el frontend)
 ========================================================= */
-router.put("/servicio/:id", async (req, res) => {
+const updateServicioHandler = async (req, res) => {
   let conn;
   try {
     const id = Number(req.params.id);
@@ -913,7 +981,6 @@ router.put("/servicio/:id", async (req, res) => {
         ]
       );
 
-      // opcional: “aprendizaje” de catálogos (si quieres)
       if (regimen === "OTRO" && regimen_otro) await upsertCatalogo(conn, "aloj_regimen_otro", regimen_otro);
       if (categoria_hotel === "OTRO" && categoria_hotel_otro) await upsertCatalogo(conn, "aloj_categoria_hotel_otro", categoria_hotel_otro);
       if (categoria_hab === "OTRO" && categoria_hab_otro) await upsertCatalogo(conn, "aloj_categoria_hab_otro", categoria_hab_otro);
@@ -993,19 +1060,19 @@ router.put("/servicio/:id", async (req, res) => {
         });
       }
 
-      await conn.execute(
-        `
-        INSERT INTO vuelo (id_servicio, origen, destino, escalas, clase, equipaje)
-        VALUES (?, ?, ?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE
-          origen = VALUES(origen),
-          destino = VALUES(destino),
-          escalas = VALUES(escalas),
-          clase = VALUES(clase),
-          equipaje = VALUES(equipaje)
-        `,
-        [id, origen, destino, Number(escalas), clase, equipaje]
-      );
+      await upsertDynamicOneToOne(conn, "vuelo", id, {
+        origen,
+        destino,
+        escalas: Number(escalas),
+        clase,
+        equipaje,
+      });
+
+      // (opcional) aprendizaje
+      if (origen) await upsertCatalogo(conn, "vuelo_origen", origen);
+      if (destino) await upsertCatalogo(conn, "vuelo_destino", destino);
+      if (clase) await upsertCatalogo(conn, "vuelo_clase", clase);
+      if (equipaje) await upsertCatalogo(conn, "vuelo_equipaje", equipaje);
     }
 
     // ===== TREN =====
@@ -1031,20 +1098,20 @@ router.put("/servicio/:id", async (req, res) => {
 
       const sillas = String(tren.sillas_reservadas) === "1" || tren.sillas_reservadas === true ? 1 : 0;
 
-      await conn.execute(
-        `
-        INSERT INTO tren (id_servicio, origen, destino, escalas, clase, equipaje, sillas_reservadas)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE
-          origen = VALUES(origen),
-          destino = VALUES(destino),
-          escalas = VALUES(escalas),
-          clase = VALUES(clase),
-          equipaje = VALUES(equipaje),
-          sillas_reservadas = VALUES(sillas_reservadas)
-        `,
-        [id, origen, destino, Number(escalas), clase, equipaje, sillas]
-      );
+      await upsertDynamicOneToOne(conn, "tren", id, {
+        origen,
+        destino,
+        escalas: Number(escalas),
+        clase,
+        equipaje,
+        sillas_reservadas: sillas,
+      });
+
+      // (opcional) aprendizaje
+      if (origen) await upsertCatalogo(conn, "tren_origen", origen);
+      if (destino) await upsertCatalogo(conn, "tren_destino", destino);
+      if (clase) await upsertCatalogo(conn, "tren_clase", clase);
+      if (equipaje) await upsertCatalogo(conn, "tren_equipaje", equipaje);
     }
 
     // ===== TRASLADO =====
@@ -1063,41 +1130,22 @@ router.put("/servicio/:id", async (req, res) => {
       const vehiculo = traslado.vehiculo ?? null;
       const vehiculo_otro = String(traslado.vehiculo_otro || "").trim() || null;
 
-      await conn.execute(
-        `
-        INSERT INTO traslado (
-          id_servicio,
-          origen, destino,
-          tipo_traslado, tipo_traslado_otro,
-          vehiculo, vehiculo_otro,
-          nota
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE
-          origen = VALUES(origen),
-          destino = VALUES(destino),
-          tipo_traslado = VALUES(tipo_traslado),
-          tipo_traslado_otro = VALUES(tipo_traslado_otro),
-          vehiculo = VALUES(vehiculo),
-          vehiculo_otro = VALUES(vehiculo_otro),
-          nota = VALUES(nota)
-        `,
-        [
-          id,
-          origen,
-          destino,
-          tipo_traslado,
-          tipo_traslado === "OTRO" ? tipo_traslado_otro : null,
-          vehiculo,
-          vehiculo === "OTRO" ? vehiculo_otro : null,
-          traslado.nota ? String(traslado.nota).trim() : null,
-        ]
-      );
+      await upsertDynamicOneToOne(conn, "traslado", id, {
+        origen,
+        destino,
+        tipo_traslado,
+        tipo_traslado_otro: tipo_traslado === "OTRO" ? tipo_traslado_otro : null,
+        vehiculo,
+        vehiculo_otro: vehiculo === "OTRO" ? vehiculo_otro : null,
+        nota: traslado.nota ? String(traslado.nota).trim() : null,
+      });
 
       if (tipo_traslado === "OTRO" && tipo_traslado_otro) await upsertCatalogo(conn, "traslado_tipo_otro", tipo_traslado_otro);
       if (vehiculo === "OTRO" && vehiculo_otro) await upsertCatalogo(conn, "traslado_vehiculo_otro", vehiculo_otro);
       if (origen) await upsertCatalogo(conn, "traslado_origen", origen);
       if (destino) await upsertCatalogo(conn, "traslado_destino", destino);
     }
+
 
     // ===== TOUR =====
     if (tour) {
@@ -1117,36 +1165,18 @@ router.put("/servicio/:id", async (req, res) => {
       }
 
       const duracion_min =
-        tour.duracion_min !== undefined && tour.duracion_min !== null && String(tour.duracion_min) !== ""
+        tour.duracion_min !== undefined && tour.duracion_min !== null && String(tour.duracion_min).trim() !== ""
           ? Number(tour.duracion_min)
           : null;
 
-      await conn.execute(
-        `
-        INSERT INTO tour (
-          id_servicio,
-          duracion_min,
-          tipo_guia,
-          tipo_guia_otro,
-          idioma,
-          idioma_otro
-        ) VALUES (?, ?, ?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE
-          duracion_min = VALUES(duracion_min),
-          tipo_guia = VALUES(tipo_guia),
-          tipo_guia_otro = VALUES(tipo_guia_otro),
-          idioma = VALUES(idioma),
-          idioma_otro = VALUES(idioma_otro)
-        `,
-        [
-          id,
-          Number.isFinite(duracion_min) ? duracion_min : null,
-          tipo_guia,
-          tipo_guia === "OTRO" ? tipo_guia_otro : null,
-          idioma,
-          idioma === "OTRO" ? idioma_otro : null,
-        ]
-      );
+      await upsertDynamicOneToOne(conn, "tour", id, {
+        tipo_guia,
+        tipo_guia_otro: tipo_guia === "OTRO" ? tipo_guia_otro : null,
+        idioma,
+        idioma_otro: idioma === "OTRO" ? idioma_otro : null,
+
+        duracion_min: Number.isFinite(duracion_min) ? duracion_min : null,
+      });
 
       if (tipo_guia) await upsertCatalogo(conn, "tour_tipo_guia", tipo_guia);
       if (idioma) await upsertCatalogo(conn, "idiomas", idioma);
@@ -1191,18 +1221,21 @@ router.put("/servicio/:id", async (req, res) => {
     if (e.code === "ER_DUP_ENTRY") {
       return res.status(400).json({ ok: false, mensaje: "nombre_wtravel duplicado", error: e.message });
     }
-    console.error("PUT /servicio/:id", e);
+    console.error("PUT /servicio(s)/:id", e);
     return res.status(500).json({ ok: false, mensaje: "Error actualizando servicio", error: e.message });
   } finally {
     try { if (conn) conn.release(); } catch {}
   }
-});
+};
 
+// ✅ mismas reglas de id + mismo handler, dos rutas
+router.put("/servicio/:id", requireNumericIdParam, updateServicioHandler);
+router.put("/servicios/:id", requireNumericIdParam, updateServicioHandler); // 👈 alias para frontend
 
 /* =========================================================
    PUT /api/servicios/:id/horas
 ========================================================= */
-router.put("/servicios/:id/horas", async (req, res) => {
+router.put("/servicios/:id/horas", requireNumericIdParam, async (req, res) => {
   let conn;
   try {
     const id_servicio = Number(req.params.id);
@@ -1234,7 +1267,7 @@ router.put("/servicios/:id/horas", async (req, res) => {
 /* =========================================================
    DELETE /api/servicio/:id
 ========================================================= */
-router.delete("/servicio/:id", async (req, res) => {
+router.delete("/servicio/:id", requireNumericIdParam, async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!id) return res.status(400).json({ ok: false, mensaje: "id inválido" });
@@ -1252,7 +1285,7 @@ router.delete("/servicio/:id", async (req, res) => {
 /* =========================================================
    DELETE /api/servicios/:id/horas/:hora
 ========================================================= */
-router.delete("/servicios/:id/horas/:hora", async (req, res) => {
+router.delete("/servicios/:id/horas/:hora", requireNumericIdParam, async (req, res) => {
   try {
     const id_servicio = Number(req.params.id);
     const hora = toTime(req.params.hora);
@@ -1273,7 +1306,7 @@ router.delete("/servicios/:id/horas/:hora", async (req, res) => {
 /* =========================================================
    GET /api/servicios/:id/precios?anio=YYYY&tipo_habitacion=DBL
 ========================================================= */
-router.get("/servicios/:id/precios", async (req, res) => {
+router.get("/servicios/:id/precios", requireNumericIdParam, async (req, res) => {
   let conn;
   try {
     const id_servicio = Number(req.params.id);
@@ -1313,7 +1346,7 @@ router.get("/servicios/:id/precios", async (req, res) => {
 /* =========================================================
    PUT /api/servicios/:id/precios?anio=YYYY&tipo_habitacion=DBL
 ========================================================= */
-router.put("/servicios/:id/precios", async (req, res) => {
+router.put("/servicios/:id/precios", requireNumericIdParam, async (req, res) => {
   let conn;
   try {
     const id_servicio = Number(req.params.id);
@@ -1332,7 +1365,9 @@ router.put("/servicios/:id/precios", async (req, res) => {
       return res.status(400).json({ ok: false, mensaje: "Body requiere precios[]" });
     }
 
-    const byMes = new Map();
+    const toUpsert = []; // meses con valor numérico
+    const toDelete = []; // meses vacíos => borrar
+
     for (const p of precios) {
       const mes = Number(p?.mes);
       if (!Number.isInteger(mes) || mes < 1 || mes > 12) {
@@ -1340,45 +1375,65 @@ router.put("/servicios/:id/precios", async (req, res) => {
       }
 
       const raw = p?.precio_usd;
-      let precio = null;
 
-      if (raw !== null && raw !== undefined && String(raw).trim() !== "") {
-        const num = Number(raw);
-        if (!Number.isFinite(num)) {
-          return res.status(400).json({ ok: false, mensaje: `precio_usd inválido en mes ${mes}` });
-        }
-        if (num < 0) {
-          return res.status(400).json({ ok: false, mensaje: `No se permiten negativos (mes ${mes})` });
-        }
-        precio = Math.round(num * 100) / 100;
+      // vacío => borrar
+      if (raw === null || raw === undefined || String(raw).trim() === "") {
+        toDelete.push(mes);
+        continue;
       }
 
-      byMes.set(mes, precio);
-    }
+      const num = Number(raw);
+      if (!Number.isFinite(num)) {
+        return res.status(400).json({ ok: false, mensaje: `precio_usd inválido en mes ${mes}` });
+      }
+      if (num < 0) {
+        return res.status(400).json({ ok: false, mensaje: `No se permiten negativos (mes ${mes})` });
+      }
 
-    const values = Array.from(byMes.entries()).map(([mes, precio_usd]) => ([
-      id_servicio,
-      anio,
-      mes,
-      tipo_habitacion,
-      precio_usd
-    ]));
+      const precio = Math.round(num * 100) / 100;
+      toUpsert.push([id_servicio, anio, mes, tipo_habitacion, precio]);
+    }
 
     conn = await pool.getConnection();
     await conn.beginTransaction();
 
-    await conn.query(
-      `
-      INSERT INTO servicio_precio_mes (id_servicio, anio, mes, tipo_habitacion, precio_usd)
-      VALUES ?
-      ON DUPLICATE KEY UPDATE
-        precio_usd = VALUES(precio_usd)
-      `,
-      [values]
-    );
+    // 1) borrar meses vacíos
+    if (toDelete.length > 0) {
+      const placeholders = toDelete.map(() => "?").join(",");
+      await conn.query(
+        `
+        DELETE FROM servicio_precio_mes
+        WHERE id_servicio = ?
+          AND anio = ?
+          AND tipo_habitacion = ?
+          AND mes IN (${placeholders})
+        `,
+        [id_servicio, anio, tipo_habitacion, ...toDelete]
+      );
+    }
+
+    // 2) insertar/actualizar meses con precio
+    if (toUpsert.length > 0) {
+      await conn.query(
+        `
+        INSERT INTO servicio_precio_mes (id_servicio, anio, mes, tipo_habitacion, precio_usd)
+        VALUES ?
+        ON DUPLICATE KEY UPDATE
+          precio_usd = VALUES(precio_usd)
+        `,
+        [toUpsert]
+      );
+    }
 
     await conn.commit();
-    return res.json({ ok: true, mensaje: "Precios guardados", count: values.length });
+
+    return res.json({
+      ok: true,
+      mensaje: "Precios guardados",
+      upsert: toUpsert.length,
+      deleted: toDelete.length
+    });
+
   } catch (e) {
     try { if (conn) await conn.rollback(); } catch {}
     console.error("PUT /servicios/:id/precios", e);

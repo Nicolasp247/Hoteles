@@ -4,7 +4,6 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Precios por servicio</title>
-  <!-- Estilos específicos (los hacemos aparte) -->
   <link rel="stylesheet" href="precios-servicios.css" />
 </head>
 
@@ -25,7 +24,7 @@
   <main>
     <section>
       <!-- =========================
-           FILTROS DE UBICACIÓN
+           BLOQUE FILTROS
       ========================== -->
       <div class="parent_filtros">
         <div class="div1">
@@ -57,7 +56,6 @@
           </label>
         </div>
 
-        <!-- ✅ Año solo 2025/2026 -->
         <div class="div7">
           <label>Año <br/>
             <select id="sel-anio">
@@ -69,12 +67,12 @@
       </div>
 
       <!-- =========================
-           SELECCIÓN DE SERVICIO (TODOS LOS SERVICIOS)
+           BLOQUE SELECCIÓN SERVICIO (TODOS)
       ========================== -->
       <div class="parent_seleccionar_servicio">
         <div class="div1">
           <h2>Elige un servicio</h2>
-          <p>Selecciona el servicio para ver o editar precios.</p>
+          <p>Selecciona el servicio para abrir modal de datos o modal de precios.</p>
         </div>
 
         <div class="div8">
@@ -83,190 +81,523 @@
           </label>
         </div>
 
-        <!-- ✅ Botón al lado del servicio -->
+        <!-- ✅ Botones al lado del select -->
         <div class="div9">
-          <button id="btn-sin-precio" type="button" class="btn-secondary">
-            Mostrar servicios sin precio
+          <button id="btn-servicio-datos" type="button" class="btn-secondary">
+            Mostrar datos
+          </button>
+        </div>
+
+        <div class="div10">
+          <button id="btn-servicio-precio" type="button" class="btn-primary">
+            Mostrar precio
           </button>
         </div>
       </div>
 
       <!-- =========================
-           TABLA: SERVICIOS SIN PRECIO (PANTALLA NORMAL)
+           TABLA FIJA: SERVICIOS SIN PRECIO (SIEMPRE VISIBLE)
       ========================== -->
-      <section id="card-sin-precio" class="card hide" aria-label="Servicios sin precio">
-        <div class="card-header">
-          <h2 class="card-title">Servicios sin precio</h2>
-          <p class="card-subtitle muted">
-            Lista de servicios que no tienen el precio completo para el año seleccionado.
-          </p>
+      <section class="card card-sin-precio" aria-label="Servicios sin precio">
+        <div class="parent_tabla_servicios_sin_precio">
+          <div class="div1">  
+            <h2 class="card-title">Servicios sin precio</h2>
+            <p class="card-subtitle muted">
+              Lista de servicios que no tienen el precio completo para el año seleccionado y filtros actuales.
+            </p>
+          </div>
         </div>
-
-        <div class="table-wrap">
+        <div class="container">
           <table class="table">
             <thead>
               <tr>
                 <th>Ciudad</th>
                 <th>Nombre WTravel</th>
-                <th>Acción</th>
+                <th>Acciones</th>
               </tr>
             </thead>
-            <tbody id="tbody-sin-precio">
-              <tr>
-                <td colspan="3" class="muted">Presiona “Mostrar servicios sin precio” para cargar.</td>
-              </tr>
-            </tbody>
+
+            <!-- Este tbody es obligatorio para pintar filas -->
+            <tbody id="tbody-sin-precio"></tbody>
           </table>
         </div>
 
-        <div class="actions">
-          <button id="btn-cerrar-sin-precio" type="button" class="btn-secondary">
-            Cerrar lista
-          </button>
+        <div class="parent_tabla_servicios_sin_precio">
+          <div class="div1">
+            <button id="btn-recargar-sin-precio" type="button" class="btn-secondary">
+              Recargar tabla
+            </button>
+            <span id="msg-sin-precio" class="msg" role="status" aria-live="polite"></span>
+          </div>
         </div>
       </section>
 
       <!-- =========================
-           INFO BÁSICA DEL SERVICIO SELECCIONADO DESDE LA TABLA (PANTALLA NORMAL)
+          MODAL 1: MOSTRAR / EDITAR DATOS
       ========================== -->
-      <section id="card-servicio-seleccionado" class="card hide" aria-label="Servicio seleccionado">
-        <div class="card-header card-header-inline">
-          <div>
-            <h2 class="card-title">Servicio seleccionado</h2>
-            <p class="card-subtitle muted">Revisa datos y elige qué quieres hacer.</p>
-          </div>
+      <dialog id="modal-datos" class="modal">
+        <div class="modal-shell">
 
-          <div class="actions">
-            <button id="btn-abrir-editar-modal" type="button" class="btn-secondary">
-              Editar información
-            </button>
-            <button id="btn-abrir-precios-modal" type="button" class="btn-primary">
-              Poner precios
-            </button>
-            <button id="btn-cancelar-servicio" type="button" class="btn-secondary">
-              Cancelar
-            </button>
-          </div>
-        </div>
-
-        <div id="srv-seleccionado-resumen" class="kv">
-          <div class="muted">Aún no has seleccionado un servicio de la tabla.</div>
-        </div>
-      </section>
-
-      <!-- =========================
-           MODAL: EDITAR / PRECIOS (PANTALLA MODAL)
-      ========================== -->
-      <dialog id="modal-servicio" class="modal">
-        <div class="modal-content">
-
+          <!-- HEADER -->
           <div class="modal-header">
             <div>
-              <h2 class="modal-title">Gestionar servicio</h2>
-              <p class="muted" id="modal-subtitle">Editar información o poner precios.</p>
+              <h2 class="modal-title">Datos del servicio</h2>
+
+              <div class="modal-hero">
+                <div class="modal-hero-title" id="modal-datos-nombre">—</div>
+                <div class="modal-hero-sub" id="modal-datos-ciudad">—</div>
+              </div>
             </div>
 
-            <div class="actions">
-              <button id="btn-modal-editar" type="button" class="btn-secondary">Editar información</button>
-              <button id="btn-modal-precios" type="button" class="btn-primary">Poner precios</button>
-              <button id="btn-modal-cerrar" type="button" class="btn-secondary">Cancelar</button>
+            <div class="modal-header-actions">
+              <button id="btn-modal-datos-abrir-precios" type="button" class="btn-primary">
+                Ver / Editar precios
+              </button>
+              <button id="btn-modal-datos-cerrar" type="button" class="btn-secondary">
+                Cerrar
+              </button>
             </div>
           </div>
 
-          <!-- =========================
-               DETALLE DEL SERVICIO (reusa tu bloque)
-               (se muestra cuando modal está en modo "editar" o solo para ver)
-          ========================== -->
-          <section class="card" aria-label="Detalle del servicio">
-            <div class="card-header card-header-inline">
-              <div>
-                <h3 class="card-title">Detalle del servicio</h3>
-                <p class="card-subtitle muted">Información del servicio seleccionado.</p>
+          <!-- BODY -->
+          <div class="modal-body">
+
+            <!-- =======================
+                VISTA (bonita)
+            ======================== -->
+            <div id="modal-datos-view">
+
+              <!-- GENERALES -->
+              <section class="card modal-card" aria-label="Datos generales del servicio">
+                <div class="card-head">
+                  <h3 class="card-title">Generales</h3>
+                  <p class="card-subtitle muted">Información base del servicio.</p>
+                </div>
+
+                <div class="modal-kv-grid">
+                  <div class="k">Tipo</div><div class="v" id="md-tipo">—</div>
+                  <div class="k">Proveedor</div><div class="v" id="md-proveedor">—</div>
+                  <div class="k">Tiempo</div><div class="v" id="md-tiempo">—</div>
+                  <div class="k">Privado</div><div class="v" id="md-privado">—</div>
+
+                  <div class="k">Link</div>
+                  <div class="v">
+                    <a id="md-link" href="#" target="_blank" rel="noopener">—</a>
+                  </div>
+
+                  <div class="k">Descripción</div>
+                  <div class="v" id="md-descripcion">—</div>
+                </div>
+              </section>
+
+              <!-- DETALLES POR TIPO (placeholders listos para luego) -->
+              <section class="card modal-card" aria-label="Detalles del tipo de servicio">
+                <div class="card-head">
+                  <h3 class="card-title">Detalles</h3>
+                  <p class="card-subtitle muted">Depende del tipo de servicio.</p>
+                </div>
+
+                <!-- BOLETO -->
+                <div id="view-sec-boleto" style="display:none;">
+                  <div class="modal-kv-grid">
+                    <div class="k">Lugar</div><div class="v" id="md-be-lugar">—</div>
+                    <div class="k">Tipo de entrada</div><div class="v" id="md-be-tipo-entrada">—</div>
+                    <div class="k">Tipo de guía</div><div class="v" id="md-be-tipo-guia">—</div>
+                    <div class="k">Idioma</div><div class="v" id="md-be-idioma">—</div>
+                  </div>
+                </div>
+
+                <!-- TOUR / VISITA / EXCURSIÓN -->
+                <div id="view-sec-tour" style="display:none;">
+                  <div class="modal-kv-grid">
+                    <div class="k">Tipo de guía</div><div class="v" id="md-tu-tipo-guia">—</div>
+                    <div class="k">Idioma</div><div class="v" id="md-tu-idioma">—</div>
+                  </div>
+                </div>
+
+                <!-- TRASLADO -->
+                <div id="view-sec-traslado" style="display:none;">
+                  <div class="modal-kv-grid">
+                    <div class="k">Origen</div><div class="v" id="md-tr-origen">—</div>
+                    <div class="k">Destino</div><div class="v" id="md-tr-destino">—</div>
+                    <div class="k">Tipo de traslado</div><div class="v" id="md-tr-tipo">—</div>
+                    <div class="k">Vehículo</div><div class="v" id="md-tr-vehiculo">—</div>
+                  </div>
+                </div>
+
+                <!-- VUELO -->
+                <div id="view-sec-vuelo" style="display:none;">
+                  <div class="modal-kv-grid">
+                    <div class="k">Origen</div><div class="v" id="md-vu-origen">—</div>
+                    <div class="k">Destino</div><div class="v" id="md-vu-destino">—</div>
+                    <div class="k">Escalas</div><div class="v" id="md-vu-escalas">—</div>
+                    <div class="k">Clase</div><div class="v" id="md-vu-clase">—</div>
+                    <div class="k">Equipaje</div><div class="v" id="md-vu-equipaje">—</div>
+                  </div>
+                </div>
+
+                <!-- TREN -->
+                <div id="view-sec-tren" style="display:none;">
+                  <div class="modal-kv-grid">
+                    <div class="k">Origen</div><div class="v" id="md-trn-origen">—</div>
+                    <div class="k">Destino</div><div class="v" id="md-trn-destino">—</div>
+                    <div class="k">Escalas</div><div class="v" id="md-trn-escalas">—</div>
+                    <div class="k">Clase</div><div class="v" id="md-trn-clase">—</div>
+                    <div class="k">Equipaje</div><div class="v" id="md-trn-equipaje">—</div>
+                    <div class="k">Asientos reservados</div><div class="v" id="md-trn-sillas">—</div>
+                  </div>
+                </div>
+
+                <!-- Si no hay nada -->
+                <div id="view-sec-empty" class="muted">
+                  Selecciona “Editar datos” para ver y ajustar los campos del tipo.
+                </div>
+              </section>
+
+              <!-- CTA -->
+              <div class="modal-footer">
+                <button id="btn-modal-datos-editar" type="button" class="btn-secondary">
+                  Editar datos
+                </button>
               </div>
+            </div>
 
-              <div class="actions">
-                <button id="btn-editar" type="button" class="btn-secondary hide">Editar info</button>
-                <button id="btn-cancelar-edicion" type="button" class="btn-secondary hide">Cancelar</button>
-                <button id="btn-guardar-edicion" type="button" class="btn-primary hide">Guardar cambios</button>
+            <!-- =======================
+                EDICIÓN (FULL)
+            ======================== -->
+            <div id="modal-datos-edit" style="display:none;">
+
+              <!-- UBICACIÓN + TIPO + NOMBRE AUTO -->
+              <section class="card modal-card" aria-label="Ubicación y tipo">
+                <div class="card-head">
+                  <h3 class="card-title">Ubicación y tipo</h3>
+                  <p class="card-subtitle muted">Estos campos controlan qué sección dinámica aparece.</p>
+                </div>
+
+                <form id="form-editar-servicio" class="form-modal">
+
+                  <div class="form-row">
+                    <label class="form-group">Continente<br/>
+                      <select id="edit-continente"></select>
+                    </label>
+
+                    <label class="form-group">País<br/>
+                      <select id="edit-pais"></select>
+                    </label>
+
+                    <label class="form-group">Ciudad<br/>
+                      <select id="edit-ciudad"></select>
+                    </label>
+                  </div>
+
+                  <div class="form-row">
+                    <label class="form-group">Tipo de servicio<br/>
+                      <select id="edit-tipo-servicio"></select>
+                    </label>
+
+                    <label class="form-group" style="flex:1;">Nombre del servicio (automático)<br/>
+                      <input id="edit-nombre-auto" type="text" placeholder="Se arma automáticamente..." readonly />
+                    </label>
+                  </div>
+
+                  <!-- BASE -->
+                  <section class="divider"></section>
+
+                  <div class="form-row">
+                    <label class="form-group">Proveedor<br/>
+                      <select id="edit-id-proveedor"></select>
+                    </label>
+
+                    <label class="form-group">Tiempo del servicio<br/>
+                      <select id="edit-tiempo-servicio-select"></select>
+                      <input id="edit-tiempo-servicio-txt"
+                            type="text"
+                            placeholder="¿Cuál?"
+                            style="display:none; margin-top:6px;">
+                    </label>
+                  </div>
+
+                  <div class="form-row">
+                    <label class="form-group">Privado<br/>
+                      <select id="edit-privado">
+                        <option value="0">No</option>
+                        <option value="1">Sí</option>
+                      </select>
+                    </label>
+
+                    <label class="form-group">Link de reserva<br/>
+                      <input type="url" id="edit-link-reserva" placeholder="https://..." />
+                    </label>
+                  </div>
+
+                  <div class="form-row">
+                    <label class="form-group" style="flex:1;">Descripción<br/>
+                      <input type="text" id="edit-descripcion" placeholder="Opcional..." />
+                    </label>
+                  </div>
+
+                  <!-- =========================
+                      SECCIONES DINÁMICAS (FULL)
+                  ========================== -->
+
+                  <!-- ALOJAMIENTO (por si luego lo activas) -->
+                  <div id="edit-sec-alojamiento" class="card inner-card" style="display:none;">
+                    <h4 class="inner-title">Alojamiento</h4>
+                    <div class="form-row">
+                      <label class="form-group">Noches<br/>
+                        <input id="edit-aloj-noches" type="number" min="1" step="1" />
+                      </label>
+                      <label class="form-group">Habitaciones<br/>
+                        <input id="edit-aloj-habitaciones" type="number" min="1" step="1" />
+                      </label>
+                    </div>
+
+                    <div class="form-row">
+                      <label class="form-group">Régimen<br/>
+                        <select id="edit-aloj-regimen"></select>
+                        <input id="edit-aloj-regimen-txt" type="text" style="display:none; margin-top:6px;" placeholder="Escribe el régimen..." />
+                      </label>
+                      <label class="form-group">Categoría hotel<br/>
+                        <select id="edit-aloj-categoria-hotel"></select>
+                        <input id="edit-aloj-categoria-hotel-txt" type="text" style="display:none; margin-top:6px;" placeholder="Escribe la categoría..." />
+                      </label>
+                      <label class="form-group">Categoría hab.<br/>
+                        <select id="edit-aloj-categoria-hab"></select>
+                        <input id="edit-aloj-categoria-hab-txt" type="text" style="display:none; margin-top:6px;" placeholder="Escribe la categoría..." />
+                      </label>
+                    </div>
+                  </div>
+
+                  <!-- BOLETO -->
+                  <div id="edit-sec-boleto" class="card inner-card" style="display:none;">
+                    <h4 class="inner-title">Boleto de entrada</h4>
+
+                    <div class="form-row">
+                      <label class="form-group">Lugar<br/>
+                        <select id="edit-be-lugar-select"></select>
+                        <input id="edit-be-lugar-txt" type="text" style="display:none; margin-top:6px;" placeholder="Escribe el lugar..." />
+                      </label>
+
+                      <label class="form-group">Tipo de entrada<br/>
+                        <select id="edit-be-tipo-entrada"></select>
+                        <input id="edit-be-tipo-entrada-txt" type="text" style="display:none; margin-top:6px;" placeholder="Escribe el tipo..." />
+                      </label>
+                    </div>
+
+                    <div class="form-row">
+                      <label class="form-group">Tipo de guía<br/>
+                        <select id="edit-be-tipo-guia"></select>
+                        <input id="edit-be-tipo-guia-txt" type="text" style="display:none; margin-top:6px;" placeholder="Escribe el tipo..." />
+                      </label>
+
+                      <label class="form-group">Idioma<br/>
+                        <select id="edit-be-idioma"></select>
+                        <input id="edit-be-idioma-txt" type="text" style="display:none; margin-top:6px;" placeholder="Escribe el idioma..." />
+                      </label>
+                    </div>
+                  </div>
+
+                  <!-- VUELO -->
+                  <div id="edit-sec-vuelo" class="card inner-card" style="display:none;">
+                    <h4 class="inner-title">Vuelo</h4>
+
+                    <div class="form-row">
+                      <label class="form-group">Origen<br/>
+                        <select id="edit-vu-origen"></select>
+                        <input id="edit-vu-origen-txt" type="text" style="display:none; margin-top:6px;" placeholder="Escribe el origen..." />
+                      </label>
+
+                      <label class="form-group">Destino<br/>
+                        <select id="edit-vu-destino"></select>
+                        <input id="edit-vu-destino-txt" type="text" style="display:none; margin-top:6px;" placeholder="Escribe el destino..." />
+                      </label>
+                    </div>
+
+                    <div class="form-row">
+                      <label class="form-group">Clase<br/>
+                        <select id="edit-vu-clase"></select>
+                      </label>
+
+                      <label class="form-group">Escalas<br/>
+                        <select id="edit-vu-escalas"></select>
+                      </label>
+
+                      <label class="form-group">Equipaje<br/>
+                        <select id="edit-vu-equipaje"></select>
+                      </label>
+                    </div>
+                  </div>
+
+                  <!-- TREN -->
+                  <div id="edit-sec-tren" class="card inner-card" style="display:none;">
+                    <h4 class="inner-title">Tren</h4>
+
+                    <div class="form-row">
+                      <label class="form-group">Origen<br/>
+                        <select id="edit-tr-origen"></select>
+                        <input id="edit-tr-origen-txt" type="text" style="display:none; margin-top:6px;" placeholder="Escribe el origen..." />
+                      </label>
+
+                      <label class="form-group">Destino<br/>
+                        <select id="edit-tr-destino"></select>
+                        <input id="edit-tr-destino-txt" type="text" style="display:none; margin-top:6px;" placeholder="Escribe el destino..." />
+                      </label>
+                    </div>
+
+                    <div class="form-row">
+                      <label class="form-group">Clase<br/>
+                        <select id="edit-tr-clase"></select>
+                      </label>
+
+                      <label class="form-group">Escalas<br/>
+                        <select id="edit-tr-escalas"></select>
+                      </label>
+
+                      <label class="form-group">Equipaje<br/>
+                        <select id="edit-tr-equipaje"></select>
+                      </label>
+
+                      <label class="form-group">Asientos reservados<br/>
+                        <select id="edit-tr-sillas">
+                          <option value="0">No</option>
+                          <option value="1">Sí</option>
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+
+                  <!-- TRASLADO -->
+                  <div id="edit-sec-traslado" class="card inner-card" style="display:none;">
+                    <h4 class="inner-title">Traslado</h4>
+
+                    <div class="form-row">
+                      <label class="form-group">Origen<br/>
+                        <select id="edit-trs-origen-select"></select>
+                        <input id="edit-trs-origen-txt" type="text" style="display:none; margin-top:6px;" placeholder="Escribe el origen..." />
+                      </label>
+
+                      <label class="form-group">Destino<br/>
+                        <select id="edit-trs-destino-select"></select>
+                        <input id="edit-trs-destino-txt" type="text" style="display:none; margin-top:6px;" placeholder="Escribe el destino..." />
+                      </label>
+                    </div>
+
+                    <div class="form-row">
+                      <label class="form-group">Tipo de traslado<br/>
+                        <select id="edit-trs-tipo"></select>
+                        <input id="edit-trs-tipo-otro" type="text" style="display:none; margin-top:6px;" placeholder="Escribe el tipo..." />
+                      </label>
+
+                      <label class="form-group">Vehículo<br/>
+                        <select id="edit-trs-vehiculo"></select>
+                        <input id="edit-trs-vehiculo-txt" type="text" style="display:none; margin-top:6px;" placeholder="Escribe el vehículo..." />
+                      </label>
+                    </div>
+
+                    <div class="form-row">
+                      <label class="form-group" style="flex:1;">Nota<br/>
+                        <input id="edit-trs-nota" type="text" placeholder="Opcional..." />
+                      </label>
+                    </div>
+                  </div>
+
+                 <!-- TOUR / VISITA / EXCURSIÓN -->
+                  <div id="edit-sec-tour" class="card inner-card" style="display:none;">
+                    <h4 class="inner-title">Excursión / Visita</h4>
+
+                    <div class="form-row">
+                      <label class="form-group">Tipo de guía<br/>
+                        <select id="edit-tu-tipo-guia"></select>
+                        <input id="edit-tu-tipo-guia-otro"
+                              type="text"
+                              style="display:none; margin-top:6px;"
+                              placeholder="Escribe el tipo..." />
+                      </label>
+
+                      <label class="form-group">Idioma<br/>
+                        <select id="edit-tu-idioma"></select>
+                        <input id="edit-tu-idioma-txt"
+                              type="text"
+                              style="display:none; margin-top:6px;"
+                              placeholder="Escribe el idioma..." />
+                      </label>
+                    </div>
+                  </div>
+
+                  <!-- MENSAJE -->
+                  <div class="form-row">
+                    <span id="msg-editar-servicio" class="msg" role="status" aria-live="polite"></span>
+                  </div>
+                </form>
+              </section>
+
+              <!-- BOTONES EDICIÓN -->
+              <div class="modal-footer" style="justify-content:center; gap:10px;">
+                <button id="btn-modal-datos-guardar" type="button" class="btn-primary">
+                  Guardar cambios
+                </button>
+
+                <button id="btn-modal-datos-cancelar" type="button" class="btn-secondary">
+                  Cancelar
+                </button>
+
               </div>
             </div>
 
-            <!-- Vista detalle -->
-            <div id="srv-detalle" class="kv">
-              <div class="muted">Selecciona un servicio para ver detalles.</div>
-            </div>
-
-            <!-- Form edición -->
-            <div id="srv-editar" class="hide">
-              <div class="form-grid form-grid-2">
-                <div class="field field-full">
-                  <label for="ed-nombre">Nombre WTravel</label>
-                  <input id="ed-nombre" type="text" />
-                </div>
-
-                <div class="field">
-                  <label for="ed-proveedor">Proveedor</label>
-                  <select id="ed-proveedor"></select>
-                </div>
-
-                <div class="field">
-                  <label for="ed-tiempo">Tiempo del servicio</label>
-                  <input id="ed-tiempo" type="text" placeholder="Ej: 4h 30m" />
-                </div>
-
-                <div class="field">
-                  <label for="ed-privado">Privado</label>
-                  <select id="ed-privado">
-                    <option value="0">No</option>
-                    <option value="1">Sí</option>
-                  </select>
-                </div>
-
-                <div class="field field-full">
-                  <label for="ed-link">Link reserva</label>
-                  <input id="ed-link" type="text" placeholder="https://..." />
-                </div>
-
-                <div class="field field-full">
-                  <label for="ed-desc">Descripción</label>
-                  <textarea id="ed-desc" placeholder="Descripción del servicio"></textarea>
-                </div>
-
-                <div class="field field-full muted" id="ed-readonly"></div>
-              </div>
-            </div>
-          </section>
-
-          <!-- =========================
-               PRECIOS POR MES (reusa tu bloque)
-          ========================== -->
-          <section class="card" aria-label="Precios por mes">
-            <div class="card-header">
-              <h3 class="card-title">Precios por mes</h3>
-              <p class="card-subtitle muted">Edita valores en USD. Vacío = NULL.</p>
-            </div>
-
-            <div class="table-wrap">
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th>Mes</th>
-                    <th>Precio USD</th>
-                  </tr>
-                </thead>
-                <tbody id="tbody-precios"></tbody>
-              </table>
-            </div>
-
-            <div class="actions actions-between">
-              <button id="btn-guardar" type="button" class="btn-primary">Guardar precios</button>
-              <span id="msg" class="msg" role="status" aria-live="polite"></span>
-            </div>
-          </section>
-
+          </div>
         </div>
       </dialog>
 
+
+      <!-- =========================
+           MODAL 2: MOSTRAR PRECIOS (SOLO PRECIOS)
+      ========================== -->
+      <dialog id="modal-precios" class="modal">
+        <div class="parent_modal_mostrar_precios">
+          <div class="div1">
+            <h2 class="modal-title">Precios del servicio</h2>
+            <p class="muted" id="modal-precios-subtitle">Edita los 12 meses para el año seleccionado.</p>
+          </div>
+          <div class="div15">
+            <p class="modal-context">
+              <strong>Servicio:</strong>
+              <span id="modal-precios-servicio-nombre">—</span>
+            </p>
+          </div>
+          <div class="div16">
+            <p class="modal-context">
+              <strong>Año:</strong>
+              <span id="modal-precios-anio">—</span>
+            </p>
+          </div>
+          <div class="div19">
+            <h3>Precios por mes</h3>
+          </div>
+        </div>
+
+        <section class="card" aria-label="Precios por mes">
+          <div class="table-wrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Mes</th>
+                  <th>Precio USD</th>
+                </tr>
+              </thead>
+              <tbody id="modal-tbody-precios"></tbody>
+            </table>
+          </div>
+        </section>
+        
+        <div class="parent_modal_botones_mostrar_precios">
+          <div class="div18">
+            <button id="btn-modal-precios-cerrar" type="button" class="btn-secondary">Cerrar</button>
+          </div>
+          <div class="div17">
+            <button id="btn-modal-guardar-precios" type="button" class="btn-primary">Guardar</button>
+          </div>
+        </div>
+      </dialog>
     </section>
   </main>
 

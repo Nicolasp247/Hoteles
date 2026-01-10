@@ -193,7 +193,7 @@ function buildTour(servicio, tour) {
 
 function buildBoleto(servicio, boleto) {
   // Formato deseado:
-  // "Entrada <Lugar>, entrada <tipo>, <guía/audioguía> en <idioma>" o "sin guía"
+  // "Boleto <Lugar>, entrada <tipo>, <guía/audioguía> en <idioma>" o "sin guía"
   const lugar =
     clean(boleto?.boleto_entrada) ||
     clean(boleto?.boleto_entrada_otro) ||
@@ -208,8 +208,8 @@ function buildBoleto(servicio, boleto) {
 
   const partes = [];
 
-  if (lugar) partes.push(`Entrada ${lugar}`);
-  else partes.push("Entrada");
+  if (lugar) partes.push(`Boleto ${lugar}`);
+  else partes.push("Boleto");
 
   if (tipoEntrada) partes.push(`entrada ${tipoEntrada}`);
 
