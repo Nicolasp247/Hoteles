@@ -4,34 +4,28 @@
   <meta charset="UTF-8" />
   <title>Etapa 3 – Cotizaciones y Precios</title>
 
-  <!-- Reutilizamos por ahora el CSS existente -->
-  <link rel="stylesheet" href="cotizacion-editar.css" />
+  <link rel="stylesheet" href="etapa3.css" />
+  <link rel="stylesheet" href="index-etapa3.css" />
 </head>
 <body>
   <header>
-    <h1>Etapa 3 – Cotizaciones y Precios</h1>
+  <div class="barra_superior">
+    <div class="div1">
+      <h1>Cotizador – Cotizaciones</h1>
+    </div>
 
-    <nav style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
-      <a href="../index.html">Inicio</a>
-      <span class="muted">|</span>
+    <div class="div2">
+      <nav class="nav-etapa3">
+        <a href="../index.html">Inicio</a>
+        <a href="./index-etapa3.html" aria-current="page">Etapa 3</a>
+        <a href="./cotizacion-crear.html">Cotización crear</a>
+        <a href="./precios-servicios.html">Precios servicios</a>
+        <a href="./precios-alojamiento.html">Precios alojamiento</a>
+      </nav>
+    </div>
+  </div>
+</header>
 
-      <a href="./index-etapa3.html">Etapa 3</a>
-      <span class="muted">|</span>
-
-      <a href="./cotizacion-crear.html">Cotización crear</a>
-      <span class="muted">|</span>
-
-      <a href="./cotizacion-editar.html">Cotización editar</a>
-      <span class="muted">|</span>
-
-      <a href="./precios-servicios.html">Precios (Servicios)</a>
-      <span class="muted">|</span>
-
-      <a href="./precios-alojamiento.html">Precios (Alojamiento)</a>
-    </nav>
-
-    <hr />
-  </header>
 
   <main>
     <!-- 1. Crear nueva cotización -->
@@ -83,7 +77,7 @@
       <h2>3) Accesos rápidos</h2>
       <p class="muted">Para ir directo a precios sin buscar nada.</p>
 
-      <div style="display:flex; flex-wrap:wrap; gap:10px;">
+      <div class="acciones-rapidas">
         <button type="button" onclick="window.location.href='./precios-servicios.html'">
           Precios de servicios (NO alojamiento)
         </button>

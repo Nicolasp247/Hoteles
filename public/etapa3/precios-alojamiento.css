@@ -1,0 +1,244 @@
+/* public/etapa3/precios-alojamiento.css */
+/* Estilo específico para precios-alojamiento (se apoya en etapa3.css) */
+
+main.container {
+  max-width: 1100px;
+  margin: 24px auto 40px auto;
+  padding: 0 16px;
+}
+
+/* Título + subtítulo centrados */
+main.container > h1 {
+  margin: 0;
+  text-align: center;
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: #2357c6;
+}
+
+main.container > p.muted {
+  text-align: center;
+  margin: 10px auto 0;
+  max-width: 980px;
+}
+
+/* =========================
+   Card principal
+   ========================= */
+section.grid {
+  margin-top: 14px;
+  background: #ffffff;
+  border-radius: 14px;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
+  border-top: 3px solid #2357c6;
+  padding: 16px;
+}
+
+/* =========================
+   Grids de filtros
+   ========================= */
+.row,
+.row2,
+.row3 {
+  display: grid;
+  gap: 10px;
+  align-items: end;
+  justify-items: center; /* ✅ centra cada bloque */
+  margin-top: 10px;
+}
+
+/* 4 columnas */
+.row {
+  grid-template-columns: repeat(4, minmax(200px, 1fr));
+}
+
+/* 5 columnas */
+.row2 {
+  grid-template-columns: repeat(5, minmax(190px, 1fr));
+}
+
+/* Cada bloque dentro de row/row2 */
+.row > div,
+.row2 > div,
+.row3 > div {
+  width: 100%;
+  max-width: 340px; /* ✅ ancho “racional” */
+  display: grid;
+  gap: 6px;
+  text-align: left;
+}
+
+label {
+  font-size: 0.85rem;
+  font-weight: 750;
+  color: #4b5563;
+}
+
+/* Inputs / selects */
+select,
+input[type="number"],
+input[type="text"] {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid #cbd2e1;
+  background: #ffffff;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  font-size: 0.92rem;
+}
+
+select:focus,
+input:focus {
+  border-color: #2357c6;
+  box-shadow: 0 0 0 3px rgba(35, 87, 198, 0.16);
+}
+
+/* OTRO */
+.wrap-otro {
+  display: none;
+}
+.wrap-otro input {
+  width: 100%;
+}
+
+/* =========================
+   Botones + mensajes
+   ========================= */
+.actions {
+  margin-top: 14px;
+  display: flex;
+  justify-content: center; /* ✅ centrado */
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+#msg.msg {
+  margin-left: 8px;
+  font-size: 0.9rem;
+  color: #374151;
+}
+
+/* Si tus botones no están usando btn-primary/btn-secondary,
+   igual les damos el estilo global tipo etapa 3 */
+button {
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.9rem;
+  border-radius: 999px;
+  padding: 8px 18px;
+  border: 1px solid transparent;
+  font-weight: 700;
+  transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
+}
+
+/* Por defecto: azul (como primaria) */
+button {
+  background: #2357c6;
+  color: #ffffff;
+  box-shadow: 0 2px 4px rgba(35, 87, 198, 0.30);
+}
+
+button:hover {
+  background: #1d46a4;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(35, 87, 198, 0.30);
+}
+
+button:active {
+  transform: translateY(0);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.25);
+}
+
+/* Si quieres que “Cargar” sea secundario:
+   (opcional) solo si te gusta más así */
+#btn-cargar {
+  background: #ffffff;
+  color: #2357c6;
+  border-color: #2357c6;
+  box-shadow: none;
+}
+#btn-cargar:hover {
+  background: #f3f6ff;
+  transform: none;
+}
+
+/* =========================
+   Tabla centrada + columnas proporcionales
+   ========================= */
+table {
+  width: min(900px, 100%);
+  margin: 14px auto 0;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  background: #ffffff;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+thead {
+  background: rgba(35, 87, 198, 0.08);
+}
+
+th,
+td {
+  border: 1px solid #e5e7eb;
+  padding: 10px 12px;
+  text-align: center;       /* ✅ centrado */
+  vertical-align: middle;   /* ✅ centrado vertical */
+}
+
+th {
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #374151;
+  font-weight: 800;
+}
+
+/* Zebra */
+tbody tr:nth-child(even) {
+  background: #f9fafb;
+}
+
+/* Input en tabla (precio) */
+tbody input[type="number"] {
+  width: 160px;
+  max-width: 100%;
+  text-align: center;
+  padding: 7px 10px;
+  border-radius: 10px;
+}
+
+/* =========================
+   Responsive
+   ========================= */
+@media (max-width: 1050px) {
+  .row {
+    grid-template-columns: repeat(2, minmax(220px, 1fr));
+  }
+  .row2 {
+    grid-template-columns: repeat(2, minmax(220px, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .row,
+  .row2 {
+    grid-template-columns: 1fr;
+  }
+
+  .row > div,
+  .row2 > div {
+    max-width: 100%;
+  }
+
+  button {
+    width: 100%;
+  }
+
+  tbody input[type="number"] {
+    width: 100%;
+  }
+}

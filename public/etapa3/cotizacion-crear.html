@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <title>Nueva cotización</title>
 
-  <!-- Si tienes algún CSS común, puedes enlazarlo aquí -->
+  <link rel="stylesheet" href="etapa3.css" />
   <link rel="stylesheet" href="cotizacion-crear.css" />
 </head>
 <body>
@@ -24,147 +24,185 @@
         </nav>
       </div>
     </div>
-    <hr />
   </header>
 
   <main>
-    <form id="form-cotizacion">
-      <!-- Bloque: Datos básicos -->
-      <fieldset>
-        <legend>Datos básicos</legend>
+    <form id="form-cotizacion" class="cc-form">
 
-        <label>
-          Agente (*):
-          <input type="text" name="agente" id="agente" required />
-        </label>
+      <!-- =========================
+           CARD: Datos básicos
+      ========================== -->
+      <section class="cc-card" aria-label="Datos básicos">
+        <div class="cc-card-head">
+          <h2>Datos básicos</h2>
+          <p class="muted">Lo mínimo para identificar la cotización.</p>
+        </div>
 
-        <label>
-          Nombre pasajero (*):
-          <input type="text" name="nombre_pasajero" id="nombre_pasajero" required />
-        </label>
+        <div class="cc-grid cc-grid-3">
+          <label class="cc-field">
+            <span class="cc-label">Agente (*)</span>
+            <input type="text" name="agente" id="agente" required />
+          </label>
 
-        <label>
-          Fecha de viaje (*):
-          <input type="date" name="fecha_viaje" id="fecha_viaje" required />
-        </label>
-      </fieldset>
+          <label class="cc-field">
+            <span class="cc-label">Nombre pasajero (*)</span>
+            <input type="text" name="nombre_pasajero" id="nombre_pasajero" required />
+          </label>
 
-      <!-- Bloque: Número de pasajeros -->
-      <fieldset>
-        <legend>Pasajeros</legend>
+          <label class="cc-field">
+            <span class="cc-label">Fecha de viaje (*)</span>
+            <input type="date" name="fecha_viaje" id="fecha_viaje" required />
+          </label>
+        </div>
+      </section>
 
-        <div class="fila-pasajeros">
-          <label>
-            Adultos +65:
+      <!-- =========================
+           CARD: Pasajeros
+      ========================== -->
+      <section class="cc-card" aria-label="Pasajeros">
+        <div class="cc-card-head">
+          <h2>Pasajeros</h2>
+          <p class="muted">Pon los conteos por rango de edad.</p>
+        </div>
+
+        <div class="cc-grid cc-grid-3">
+          <label class="cc-field">
+            <span class="cc-label">Adultos +65</span>
             <input type="number" min="0" step="1" id="adultos_65" value="0" />
           </label>
 
-          <label>
-            Adultos 19 - 64:
+          <label class="cc-field">
+            <span class="cc-label">Adultos 19–64</span>
             <input type="number" min="0" step="1" id="adultos_19_64" value="0" />
           </label>
-        </div>
 
-        <div class="fila-pasajeros">
-          <label>
-            Jóvenes 12 - 18:
+          <label class="cc-field">
+            <span class="cc-label">Jóvenes 12–18</span>
             <input type="number" min="0" step="1" id="jovenes_12_18" value="0" />
           </label>
 
-          <label>
-            Niños 3 - 11:
+          <label class="cc-field">
+            <span class="cc-label">Niños 3–11</span>
             <input type="number" min="0" step="1" id="ninos_3_11" value="0" />
           </label>
-        </div>
 
-        <div class="fila-pasajeros">
-          <label>
-            Infantes &lt; 2:
+          <label class="cc-field">
+            <span class="cc-label">Infantes &lt; 2</span>
             <input type="number" min="0" step="1" id="infantes_0_2" value="0" />
           </label>
+
+          <div class="cc-field cc-summary">
+            <span class="cc-label">Resumen</span>
+            <div id="resumen-personas" class="cc-pill">Total: 0 personas</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =========================
+           CARD: Categoría
+      ========================== -->
+      <section class="cc-card" aria-label="Categoría de alojamiento">
+        <div class="cc-card-head">
+          <h2>Categoría de alojamiento</h2>
+          <p class="muted">Puedes marcar una o varias (si así lo estás manejando).</p>
         </div>
 
-        <p id="resumen-personas">
-          Total: 0 personas
-        </p>
-      </fieldset>
+        <div class="cc-check-grid">
+          <label class="cc-check">
+            <input type="checkbox" class="categoria" value="3*" />
+            <span>Alojamiento estándar (3★)</span>
+          </label>
 
-      <!-- Bloque: Categorías -->
-      <fieldset>
-        <legend>Categoría de alojamiento</legend>
+          <label class="cc-check">
+            <input type="checkbox" class="categoria" value="4*" />
+            <span>Primera categoría (4★)</span>
+          </label>
 
-        <label>
-          <input type="checkbox" class="categoria" value="3*" />
-          Alojamiento estándar (equivalente 3 estrellas)
-        </label><br />
+          <label class="cc-check">
+            <input type="checkbox" class="categoria" value="5*" />
+            <span>Lujo estándar (5★)</span>
+          </label>
 
-        <label>
-          <input type="checkbox" class="categoria" value="4*" />
-          Alojamiento primera categoría (equivalente 4 estrellas)
-        </label><br />
-
-        <label>
-          <input type="checkbox" class="categoria" value="5*" />
-          Alojamiento lujo estándar (equivalente 5 estrellas)
-        </label><br />
-
-        <label>
-          <input type="checkbox" class="categoria" value="luxury" />
-          Alojamiento lujo (hoteles luxury)
-        </label>
-      </fieldset>
-
-      <!-- Bloque: Moneda -->
-      <fieldset>
-        <legend>Moneda</legend>
-
-        <label>
-          Moneda:
-          <select id="moneda_select">
-            <option value="">(sin especificar)</option>
-            <option value="USD">USD</option>
-            <option value="COP">COP</option>
-            <option value="EUR">EUR</option>
-            <option value="OTRO">Otro…</option>
-          </select>
-        </label>
-
-        <div id="moneda_otro_container" style="display: none;">
-          <label>
-            Especifique moneda:
-            <input type="text" id="moneda_otro" placeholder="Ej: MXN, GBP, JPY..." />
+          <label class="cc-check">
+            <input type="checkbox" class="categoria" value="luxury" />
+            <span>Lujo (hoteles luxury)</span>
           </label>
         </div>
+      </section>
 
-        <!-- De momento enviaremos moneda_id como null.
-             Más adelante conectamos esto con la tabla Moneda. -->
-      </fieldset>
+      <!-- =========================
+           CARD: Moneda
+      ========================== -->
+      <section class="cc-card" aria-label="Moneda">
+        <div class="cc-card-head">
+          <h2>Moneda</h2>
+          <p class="muted">Si eliges “Otro”, escribe el código (MXN, JPY...).</p>
+        </div>
 
-      <!-- Bloque: Nota -->
-      <fieldset>
-        <legend>Notas</legend>
-        <textarea id="nota" rows="3" placeholder="Anotaciones adicionales..."></textarea>
-      </fieldset>
+        <div class="cc-grid cc-grid-2">
+          <label class="cc-field">
+            <span class="cc-label">Moneda</span>
+            <select id="moneda_select">
+              <option value="">(sin especificar)</option>
+              <option value="USD">USD</option>
+              <option value="COP">COP</option>
+              <option value="EUR">EUR</option>
+              <option value="OTRO">Otro…</option>
+            </select>
+          </label>
 
-      <!-- Bloque: Nombre generado -->
-      <fieldset>
-        <legend>Nombre de la cotización</legend>
-        <p>
-          <strong>Nombre generado:</strong>
-          <span id="nombre_cotizacion_preview">(se generará automáticamente)</span>
-        </p>
-      </fieldset>
+          <div id="moneda_otro_container" class="cc-field" style="display: none;">
+            <label class="cc-field">
+              <span class="cc-label">Especifique moneda</span>
+              <input type="text" id="moneda_otro" placeholder="Ej: MXN, GBP, JPY..." />
+            </label>
+          </div>
+        </div>
+      </section>
 
-      <div class="acciones-form">
-        <button type="submit">Guardar cotización</button>
-      </div>
+      <!-- =========================
+           CARD: Notas
+      ========================== -->
+      <section class="cc-card" aria-label="Notas">
+        <div class="cc-card-head">
+          <h2>Notas</h2>
+          <p class="muted">Opcional. Cosas que no quieres olvidar.</p>
+        </div>
 
-      <p id="mensaje-error" class="mensaje-error"></p>
-      <p id="mensaje-ok" class="mensaje-ok"></p>
+        <label class="cc-field">
+          <span class="cc-label">Notas</span>
+          <textarea id="nota" rows="3" placeholder="Anotaciones adicionales..."></textarea>
+        </label>
+      </section>
+
+      <!-- =========================
+           CARD: Nombre generado
+      ========================== -->
+      <section class="cc-card" aria-label="Nombre de la cotización">
+        <div class="cc-card-head">
+          <h2>Nombre de la cotización</h2>
+          <p class="muted">Se arma automáticamente con los datos.</p>
+        </div>
+
+        <div class="cc-preview">
+          <div class="cc-preview-k">Nombre generado</div>
+          <div class="cc-preview-v" id="nombre_cotizacion_preview">(se generará automáticamente)</div>
+        </div>
+      </section>
+
+      <!-- =========================
+           Acciones + mensajes
+      ========================== -->
+      <section class="cc-actions">
+        <button type="submit" class="btn-primary">Guardar cotización</button>
+        <p id="mensaje-error" class="cc-msg cc-msg-error"></p>
+        <p id="mensaje-ok" class="cc-msg cc-msg-ok"></p>
+      </section>
+
     </form>
   </main>
 
-  <script src="../components/api.js"></script> <!-- si lo necesitas -->
+  <script src="../components/api.js"></script>
   <script src="cotizacion-crear.js"></script>
 </body>
 </html>

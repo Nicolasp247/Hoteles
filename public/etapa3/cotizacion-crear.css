@@ -1,0 +1,233 @@
+/* public/etapa3/cotizacion-crear.css */
+/* SOLO específico de cotizacion-crear (se apoya en etapa3.css) */
+
+main {
+  max-width: 1100px;
+  margin: 24px auto 40px auto;
+  padding: 0 16px;
+}
+
+/* =========================
+   Cards
+   ========================= */
+.cc-card {
+  background: #ffffff;
+  border-radius: 14px;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
+  border-top: 3px solid #2357c6;
+  padding: 16px;
+  margin-top: 14px;
+}
+
+.cc-card-head {
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.cc-card-head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #1f2933;
+}
+
+.cc-card-head p {
+  margin: 6px 0 0 0;
+}
+
+/* =========================
+   Grid base
+   ========================= */
+.cc-grid {
+  display: grid;
+  gap: 12px;
+  align-items: end;
+  justify-items: center; /* ✅ centra cada “bloque” */
+}
+
+.cc-grid-3 {
+  grid-template-columns: repeat(3, minmax(200px, 1fr));
+}
+
+.cc-grid-2 {
+  grid-template-columns: repeat(2, minmax(240px, 1fr));
+}
+
+/* =========================
+   Campos
+   ========================= */
+.cc-field {
+  width: 100%;
+  max-width: 360px; /* ✅ controla ancho “racional” */
+  display: grid;
+  gap: 6px;
+  text-align: left;
+}
+
+.cc-label {
+  font-size: 0.85rem;
+  font-weight: 750;
+  color: #4b5563;
+}
+
+/* Inputs y selects (mismo feel que precios-servicios) */
+.cc-field input[type="text"],
+.cc-field input[type="date"],
+.cc-field input[type="number"],
+.cc-field input[type="url"],
+.cc-field select,
+.cc-field textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid #cbd2e1;
+  background: #fff;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  font-size: 0.92rem;
+}
+
+.cc-field textarea {
+  min-height: 90px;
+  resize: vertical;
+}
+
+.cc-field input:focus,
+.cc-field select:focus,
+.cc-field textarea:focus {
+  border-color: #2357c6;
+  box-shadow: 0 0 0 3px rgba(35, 87, 198, 0.16);
+}
+
+/* =========================
+   Resumen (pill)
+   ========================= */
+.cc-summary {
+  max-width: 360px;
+}
+
+.cc-pill {
+  width: 100%;
+  border-radius: 999px;
+  padding: 10px 12px;
+  background: rgba(35, 87, 198, 0.08);
+  border: 1px solid rgba(35, 87, 198, 0.18);
+  color: #111827;
+  font-weight: 750;
+  text-align: center;
+}
+
+/* =========================
+   Checks de categoría
+   ========================= */
+.cc-check-grid {
+  margin-top: 4px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  gap: 10px;
+  justify-items: center;
+}
+
+.cc-check {
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+}
+
+.cc-check input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: #2357c6;
+}
+
+.cc-check span {
+  font-size: 0.95rem;
+  color: #111827;
+  font-weight: 600;
+}
+
+/* =========================
+   Preview nombre cotización
+   ========================= */
+.cc-preview {
+  width: min(820px, 100%);
+  margin: 0 auto;
+  border: 1px solid rgba(15, 23, 42, 0.10);
+  background: rgba(15, 23, 42, 0.02);
+  border-radius: 14px;
+  padding: 12px 14px;
+  display: grid;
+  gap: 6px;
+  text-align: center;
+}
+
+.cc-preview-k {
+  font-size: 0.78rem;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #374151;
+}
+
+.cc-preview-v {
+  font-size: 0.98rem;
+  font-weight: 800;
+  color: #0f172a;
+  word-break: break-word;
+}
+
+/* =========================
+   Acciones + mensajes
+   ========================= */
+.cc-actions {
+  margin-top: 14px;
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+}
+
+.cc-msg {
+  margin: 0;
+  text-align: center;
+  font-size: 0.92rem;
+}
+
+.cc-msg-error {
+  color: crimson;
+}
+
+.cc-msg-ok {
+  color: #0f7a2a;
+}
+
+/* =========================
+   Responsive
+   ========================= */
+@media (max-width: 980px) {
+  .cc-grid-3 {
+    grid-template-columns: repeat(2, minmax(220px, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .cc-grid-3,
+  .cc-grid-2,
+  .cc-check-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cc-field,
+  .cc-check {
+    max-width: 100%;
+  }
+
+  button {
+    width: 100%;
+  }
+}
