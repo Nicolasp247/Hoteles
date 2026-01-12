@@ -72,8 +72,8 @@ app.get("/api/_meta/schema", async (_req, res) => {
   }
 });
 
-app.use("/api", require("./src/routes/etapa3/servicios_sin_precios")); // aquí vive solo sin-precio
-
+// --- Rutas Etapa 3 (solo sin-precio) ---
+app.use("/api", require("./src/routes/etapa3/servicios_sin_precios"));
 
 // --- Rutas Etapa 1 ---
 app.use("/api", require("./src/routes/etapa1/ubicaciones"));
@@ -82,7 +82,10 @@ app.use("/api", require("./src/routes/etapa1/hoteles"));
 // --- Rutas Etapa 2 ---
 app.use("/api", require("./src/routes/etapa2/tiposervicio"));
 app.use("/api", require("./src/routes/etapa2/proveedores"));
-app.use("/api", require("./src/routes/etapa2/servicios"));
+
+const serviciosRouter = require("./src/routes/etapa2/servicios");
+app.use("/api", serviciosRouter);
+
 app.use("/api", require("./src/routes/etapa2/alojamientos"));
 app.use("/api", require("./src/routes/catalogos"));
 
@@ -91,7 +94,6 @@ app.use("/api", require("./src/routes/etapa3/cotizaciones"));
 app.use("/api", require("./src/routes/etapa3/alojamiento-precio"));
 app.use("/api", require("./src/routes/etapa3/precios"));
 app.use("/api", require("./src/routes/etapa3/hotel_precios"));
-
 
 // 404 solo para rutas de API
 app.use("/api", (_req, res) => {

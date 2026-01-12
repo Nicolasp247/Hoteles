@@ -1,4 +1,6 @@
 // public/etapa3/precios-servicios.js
+import { createCacheManager } from "../components/cache-manager.js";
+
 document.addEventListener("DOMContentLoaded", () => {
   // =========================
   // Config
@@ -9,6 +11,8 @@ document.addEventListener("DOMContentLoaded", () => {
     "Enero","Febrero","Marzo","Abril","Mayo","Junio",
     "Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"
   ];
+
+  const cache = createCacheManager();
 
   // =========================
   // Helpers DOM
@@ -89,16 +93,18 @@ document.addEventListener("DOMContentLoaded", () => {
   let modalDatosIsEditing = false;
 
   let proveedoresCache = [];
-  const catalogCache = {}; // /api/catalogos/:grupo
 
   const servicioCacheById = new Map(); // id -> objeto de /api/servicios lista
-  const detalleCacheById = new Map();  // id -> detalle /api/servicios/:id
 
   // =========================
   // Helpers UI
   // =========================
   function safeText(v) { return v == null ? "" : String(v); }
   function round2(n) { return Math.round((n + Number.EPSILON) * 100) / 100; }
+
+  function normalizeUiValue(v) {
+    return String(v ?? "").trim().replace(/\s+/g, " ");
+  }
 
   function setMsgSinPrecio(text, isError = false) {
     if (!msgSinPrecio) return;
@@ -158,6 +164,70 @@ document.addEventListener("DOMContentLoaded", () => {
     throw new Error(`Formato inesperado desde ${url}`);
   }
 
+    // =========================
+  // Pendiente (4): Errores bonitos
+  // =========================
+  function shorten(s, max = 180) {
+    const t = String(s || "").trim();
+    return t.length > max ? t.slice(0, max - 1) + "…" : t;
+  }
+
+  function detectErrorCodeFromText(msg) {
+    const m = String(msg || "").toUpperCase();
+    if (m.includes("ER_DUP_ENTRY") || m.includes("DUPLICATE ENTRY") || m.includes("DUPLICADO") || m.includes("DUPLICATE")) return "ER_DUP_ENTRY";
+    if (m.includes("UNKNOWN COLUMN") || m.includes("ER_BAD_FIELD_ERROR")) return "ER_BAD_FIELD_ERROR";
+    if (m.includes("ROUTE") && m.includes("NOT") && m.includes("FOUND")) return "ROUTE_NOT_FOUND";
+    if (m.includes("RUTA NO ENCONTRADA")) return "ROUTE_NOT_FOUND";
+    if (m.includes("ECONNREFUSED")) return "ECONNREFUSED";
+    if (m.includes("FAILED TO FETCH")) return "FAILED_TO_FETCH";
+    if (m.includes("HTTP 404")) return "HTTP_404";
+    if (m.includes("HTTP 400")) return "HTTP_400";
+    if (m.includes("HTTP 500")) return "HTTP_500";
+    return null;
+  }
+
+  function humanizeBackendError(err, { contexto = "", ruta = "" } = {}) {
+    const raw = err?.message || String(err || "");
+    const code = err?.code || detectErrorCodeFromText(raw);
+
+    // Mensaje base (por si no matchea nada)
+    let title = "No se pudo completar la operación.";
+    let hint = "";
+
+    // Casos típicos
+    if (code === "FAILED_TO_FETCH" || code === "ECONNREFUSED") {
+      title = "No pude conectar con el backend.";
+      hint =
+        "Revisa que el servidor Node esté encendido y que estés entrando por el mismo host/puerto. Si usas proxy, revisa que /api esté apuntando al backend.";
+    } else if (code === "ROUTE_NOT_FOUND" || code === "HTTP_404") {
+      title = "La ruta del backend no existe (404).";
+      hint =
+        "Verifica el endpoint y que el backend montó las rutas con app.use('/api', ...). También revisa que estés llamando /api/servicios/:id (alias OK).";
+    } else if (code === "ER_DUP_ENTRY") {
+      title = "Ese registro quedó duplicado.";
+      hint =
+        "Suele pasar si el nombre automático (nombre_wtravel) coincide con otro servicio. Cambia un campo (origen/destino/tiempo) o ajustamos el generador para agregar sufijo.";
+    } else if (code === "ER_BAD_FIELD_ERROR") {
+      title = "Tu base de datos no tiene una columna que el backend intentó usar.";
+      hint =
+        "Solución: ejecutar la migración que agrega esa columna, o ajustar el backend para no enviarla. (Ej: duracion_min en tour).";
+    } else if (String(raw).toLowerCase().includes("anio inválido") || String(raw).toLowerCase().includes("tipo_habitacion inválido")) {
+      title = "Parámetros inválidos.";
+      hint = "Revisa el año seleccionado y el tipo de habitación (DBL/SGL/TPL).";
+    } else if (String(raw).toLowerCase().includes("obligatorios") || String(raw).toLowerCase().includes("falta")) {
+      // ya viene claro del backend (validaciones)
+      title = "Faltan datos obligatorios.";
+      hint = "Completa los campos marcados por el mensaje y vuelve a guardar.";
+    }
+
+    const ctx = contexto ? ` (${contexto})` : "";
+    const r = ruta ? ` Ruta: ${ruta}` : "";
+    const detail = shorten(raw, 220);
+
+    // Mensaje final humano
+    return `${title}${ctx}\n${hint ? "👉 " + hint + "\n" : ""}🧾 Detalle: ${detail}${r ? "\n" + r : ""}`;
+  }
+
   function addOptions(selectEl, opciones, { firstText = "(Seleccionar)", firstValue = "" } = {}) {
     if (!selectEl) return;
     selectEl.innerHTML = "";
@@ -169,12 +239,19 @@ document.addEventListener("DOMContentLoaded", () => {
   // Catálogos (igual idea que cotizacion-editar)
   // =========================
   async function cargarCatalogo(grupo) {
-    if (catalogCache[grupo]) return catalogCache[grupo];
-    const lista = await fetchLista(`/api/catalogos/${encodeURIComponent(grupo)}`, ["opciones","valores","items"]);
+    const g = String(grupo || "").trim();
+    if (!g) return [];
+
+    const cached = cache.getCatalog(g);
+    if (cached) return cached;
+
+    const lista = await fetchLista(`/api/catalogos/${encodeURIComponent(g)}`, ["opciones","valores","items"]);
+
     const norm = (lista || [])
       .map(x => (typeof x === "string" ? { valor: x } : x))
       .filter(x => x?.valor);
-    catalogCache[grupo] = norm;
+
+    cache.setCatalog(g, norm);
     return norm;
   }
 
@@ -195,8 +272,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if (!selectEl) return null;
     const v = selectEl.value || "";
     if (!v) return null;
-    if (v !== "__write__") return v;
-    const txt = (inputEl?.value || "").trim();
+    if (v !== "__write__") return normalizeUiValue(v);
+    const txt = normalizeUiValue(inputEl?.value || "");
     return txt || null;
   }
 
@@ -330,35 +407,36 @@ document.addEventListener("DOMContentLoaded", () => {
           </div>
         </div>
 
+        <!-- ✅ FIX: Traslado usa prefijo edit-trs-* (no edit-tr-*) para evitar choque con tren -->
         <div id="edit-sec-traslado" style="display:none;">
           <h4 style="margin:0 0 8px 0;">Traslado</h4>
           <div style="display:grid; grid-template-columns: 200px 1fr; gap:10px; align-items:center;">
             <div class="muted">Origen</div>
             <div>
-              <select id="edit-tr-origen-select"></select>
-              <input id="edit-tr-origen-txt" placeholder="Escribe origen..." style="margin-top:6px; width:100%; display:none;" />
+              <select id="edit-trs-origen-select"></select>
+              <input id="edit-trs-origen-txt" placeholder="Escribe origen..." style="margin-top:6px; width:100%; display:none;" />
             </div>
 
             <div class="muted">Destino</div>
             <div>
-              <select id="edit-tr-destino"></select>
-              <input id="edit-tr-destino-txt" placeholder="Escribe destino..." style="margin-top:6px; width:100%; display:none;" />
+              <select id="edit-trs-destino-select"></select>
+              <input id="edit-trs-destino-txt" placeholder="Escribe destino..." style="margin-top:6px; width:100%; display:none;" />
             </div>
 
             <div class="muted">Tipo de traslado</div>
             <div>
-              <select id="edit-tr-tipo"></select>
-              <input id="edit-tr-tipo-otro" placeholder="Escribe tipo traslado..." style="margin-top:6px; width:100%; display:none;" />
+              <select id="edit-trs-tipo"></select>
+              <input id="edit-trs-tipo-otro" placeholder="Escribe tipo traslado..." style="margin-top:6px; width:100%; display:none;" />
             </div>
 
             <div class="muted">Vehículo</div>
             <div>
-              <select id="edit-tr-vehiculo"></select>
-              <input id="edit-tr-vehiculo-txt" placeholder="Escribe vehículo..." style="margin-top:6px; width:100%; display:none;" />
+              <select id="edit-trs-vehiculo"></select>
+              <input id="edit-trs-vehiculo-txt" placeholder="Escribe vehículo..." style="margin-top:6px; width:100%; display:none;" />
             </div>
 
             <div class="muted">Nota</div>
-            <textarea id="edit-tr-nota" rows="2" placeholder="Opcional..."></textarea>
+            <textarea id="edit-trs-nota" rows="2" placeholder="Opcional..."></textarea>
           </div>
         </div>
 
@@ -491,44 +569,109 @@ document.addEventListener("DOMContentLoaded", () => {
     delete catalogCache[grupo];
   }
 
+  // =========================
+  // ✅ Pendiente (2): Refresh catálogos en caliente, selectea lo nuevo y apaga write-mode
+  // =========================
+  function normalizeCatalogValue(v) {
+    return String(v ?? "").trim().replace(/\s+/g, " ");
+  }
+
+  function isWriteMode(selectEl) {
+    return !!selectEl && selectEl.value === "__write__";
+  }
+
+  async function refreshOneCatalogSelect({ grupo, selectId, inputId, newValue }) {
+    const selectEl = $(selectId);
+    const inputEl = $(inputId);
+    const v = normalizeCatalogValue(newValue);
+    if (!selectEl || !v) return;
+
+    // 1) invalida cache grupo
+    invalidateCatalog(grupo);
+
+    // 2) recarga catálogo SOLO para ese select (manteniendo "Escribir nuevo...")
+    await fillSelectCatalogoConEscribir(selectEl, inputEl, grupo, { firstText:"(Elegir de catálogo)", firstValue:"" });
+
+    // 3) selecciona valor (si backend lo devolvió en el catálogo) o fallback insert local
+    const exists = Array.from(selectEl.options || []).some(o => normalizeCatalogValue(o.value).toLowerCase() === v.toLowerCase());
+    if (exists) {
+      // seleccion exacta si existe
+      const opt = Array.from(selectEl.options).find(o => normalizeCatalogValue(o.value).toLowerCase() === v.toLowerCase());
+      selectEl.value = opt ? opt.value : v;
+    } else {
+      // fallback: lo metemos localmente para que el usuario lo vea ya
+      upsertOptionIntoSelect(selectEl, v, { keepWriteOption:true });
+    }
+
+    // 4) apagar write-mode visual
+    if (inputEl) {
+      inputEl.value = "";
+      show(inputEl, false);
+    }
+  }
+
   // Esta es la que llamas después de guardar exitosamente
-  function refreshCatalogosAfterSave(tipoLower, payload) {
+  async function refreshCatalogosAfterSave(tipoLower, payload) {
+    // Nota: refrescamos SOLO si el campo estaba en "__write__" o si el payload trae *_otro.
+    // Así no machacamos selects innecesariamente.
+
     // === TIEMPO SERVICIO ===
-    if (payload?.tiempo_servicio) {
-      invalidateCatalog("tiempo_servicio");
-      upsertOptionIntoSelect($("edit-tiempo-servicio-select"), payload.tiempo_servicio);
-      // ocultar txt si existe
-      if ($("edit-tiempo-servicio-txt")) $("edit-tiempo-servicio-txt").style.display = "none";
+    {
+      const sel = $("edit-tiempo-servicio-select");
+      const txt = $("edit-tiempo-servicio-txt");
+      if (payload?.tiempo_servicio && (isWriteMode(sel) || normalizeCatalogValue(txt?.value))) {
+        await refreshOneCatalogSelect({
+          grupo: "tiempo_servicio",
+          selectId: "edit-tiempo-servicio-select",
+          inputId: "edit-tiempo-servicio-txt",
+          newValue: payload.tiempo_servicio,
+        });
+      }
     }
 
     // === BOLETO ===
     if (tipoLower.includes("boleto") && payload?.boleto_entrada) {
       const b = payload.boleto_entrada;
 
-      if (b.boleto_entrada) {
-        invalidateCatalog("boleto_lugar");
-        upsertOptionIntoSelect($("edit-be-lugar-select"), b.boleto_entrada);
-        if ($("edit-be-lugar-txt")) $("edit-be-lugar-txt").style.display = "none";
+      // lugar
+      {
+        const sel = $("edit-be-lugar-select");
+        const txt = $("edit-be-lugar-txt");
+        if (b.boleto_entrada && (isWriteMode(sel) || normalizeCatalogValue(txt?.value))) {
+          await refreshOneCatalogSelect({
+            grupo: "boleto_lugar",
+            selectId: "edit-be-lugar-select",
+            inputId: "edit-be-lugar-txt",
+            newValue: b.boleto_entrada,
+          });
+        }
       }
 
-      // idioma en boleto
-      if (b.idioma) {
-        invalidateCatalog("idiomas");
-        upsertOptionIntoSelect($("edit-be-idioma"), b.idioma);
-        if ($("edit-be-idioma-txt")) $("edit-be-idioma-txt").style.display = "none";
+      // idioma (catálogo idiomas)
+      {
+        const sel = $("edit-be-idioma");
+        const txt = $("edit-be-idioma-txt");
+        const idiomaReal = b.idioma || null;
+        if (idiomaReal && (isWriteMode(sel) || normalizeCatalogValue(txt?.value))) {
+          await refreshOneCatalogSelect({
+            grupo: "idiomas",
+            selectId: "edit-be-idioma",
+            inputId: "edit-be-idioma-txt",
+            newValue: idiomaReal,
+          });
+        }
       }
 
-      // tipo_entrada_otro si aplica
+      // tipo entrada / tipo guía no son catálogos (son select local),
+      // pero si el usuario escribió algo nuevo lo insertamos localmente
       if (b.tipo_entrada === "OTRA" && b.tipo_entrada_otro) {
-        // aquí no es catálogo, pero sí select local: lo insertamos
         upsertOptionIntoSelect($("edit-be-tipo-entrada"), b.tipo_entrada_otro);
-        if ($("edit-be-tipo-entrada-txt")) $("edit-be-tipo-entrada-txt").style.display = "none";
+        if ($("edit-be-tipo-entrada-txt")) show($("edit-be-tipo-entrada-txt"), false);
       }
 
-      // tipo_guia si es escrito
-      if (b.tipo_guia && b.tipo_guia !== "GUIA" && b.tipo_guia !== "AUDIOGUIA" && b.tipo_guia !== "NINGUNO") {
+      if (b.tipo_guia && $("edit-be-tipo-guia")?.value === "__write__") {
         upsertOptionIntoSelect($("edit-be-tipo-guia"), b.tipo_guia);
-        if ($("edit-be-tipo-guia-txt")) $("edit-be-tipo-guia-txt").style.display = "none";
+        if ($("edit-be-tipo-guia-txt")) show($("edit-be-tipo-guia-txt"), false);
       }
     }
 
@@ -536,21 +679,25 @@ document.addEventListener("DOMContentLoaded", () => {
     if ((tipoLower.includes("excurs") || tipoLower.includes("visita") || tipoLower.includes("tour")) && payload?.tour) {
       const t = payload.tour;
 
-      if (t.idioma && t.idioma !== "OTRO") {
-        invalidateCatalog("idiomas");
-        upsertOptionIntoSelect($("edit-tu-idioma"), t.idioma);
-        if ($("edit-tu-idioma-txt")) $("edit-tu-idioma-txt").style.display = "none";
-      }
-      if (t.idioma === "OTRO" && t.idioma_otro) {
-        invalidateCatalog("idiomas");
-        upsertOptionIntoSelect($("edit-tu-idioma"), t.idioma_otro);
-        if ($("edit-tu-idioma-txt")) $("edit-tu-idioma-txt").style.display = "none";
+      // idioma: si fue "__write__", backend manda idioma="OTRO" + idioma_otro
+      const idiomaReal = (t.idioma === "OTRO" ? t.idioma_otro : t.idioma) || null;
+      if (idiomaReal) {
+        const sel = $("edit-tu-idioma");
+        const txt = $("edit-tu-idioma-txt");
+        if (isWriteMode(sel) || normalizeCatalogValue(txt?.value)) {
+          await refreshOneCatalogSelect({
+            grupo: "idiomas",
+            selectId: "edit-tu-idioma",
+            inputId: "edit-tu-idioma-txt",
+            newValue: idiomaReal,
+          });
+        }
       }
 
+      // tipo guía (select local, no catálogo por ahora)
       if (t.tipo_guia === "OTRO" && t.tipo_guia_otro) {
-        // tipo guía tour NO viene de catalogo_opcion (por ahora), igual lo metemos al select local
         upsertOptionIntoSelect($("edit-tu-tipo-guia"), t.tipo_guia_otro);
-        if ($("edit-tu-tipo-guia-otro")) $("edit-tu-tipo-guia-otro").style.display = "none";
+        if ($("edit-tu-tipo-guia-otro")) show($("edit-tu-tipo-guia-otro"), false);
       }
     }
 
@@ -559,15 +706,39 @@ document.addEventListener("DOMContentLoaded", () => {
       const tr = payload.traslado;
 
       if (tr.origen) {
-        invalidateCatalog("traslado_origen");
-        upsertOptionIntoSelect($("edit-trs-origen-select"), tr.origen);
-        if ($("edit-trs-origen-txt")) $("edit-trs-origen-txt").style.display = "none";
+        const sel = $("edit-trs-origen-select");
+        const txt = $("edit-trs-origen-txt");
+        if (isWriteMode(sel) || normalizeCatalogValue(txt?.value)) {
+          await refreshOneCatalogSelect({
+            grupo: "traslado_origen",
+            selectId: "edit-trs-origen-select",
+            inputId: "edit-trs-origen-txt",
+            newValue: tr.origen,
+          });
+        }
       }
 
       if (tr.destino) {
-        invalidateCatalog("traslado_destino");
-        upsertOptionIntoSelect($("edit-trs-destino-select"), tr.destino);
-        if ($("edit-trs-destino-txt")) $("edit-trs-destino-txt").style.display = "none";
+        const sel = $("edit-trs-destino-select");
+        const txt = $("edit-trs-destino-txt");
+        if (isWriteMode(sel) || normalizeCatalogValue(txt?.value)) {
+          await refreshOneCatalogSelect({
+            grupo: "traslado_destino",
+            selectId: "edit-trs-destino-select",
+            inputId: "edit-trs-destino-txt",
+            newValue: tr.destino,
+          });
+        }
+      }
+
+      // tipo/vehiculo (select local)
+      if (tr.tipo_traslado === "OTRO" && tr.tipo_traslado_otro) {
+        upsertOptionIntoSelect($("edit-trs-tipo"), tr.tipo_traslado_otro);
+        if ($("edit-trs-tipo-otro")) show($("edit-trs-tipo-otro"), false);
+      }
+      if (tr.vehiculo === "OTRO" && tr.vehiculo_otro) {
+        upsertOptionIntoSelect($("edit-trs-vehiculo"), tr.vehiculo_otro);
+        if ($("edit-trs-vehiculo-txt")) show($("edit-trs-vehiculo-txt"), false);
       }
     }
 
@@ -576,13 +747,29 @@ document.addEventListener("DOMContentLoaded", () => {
       const v = payload.vuelo;
 
       if (v.origen) {
-        invalidateCatalog("vuelo_origen");
-        upsertOptionIntoSelect($("edit-vu-origen"), v.origen);
-        if ($("edit-vu-origen-txt")) $("edit-vu-origen-txt").style.display = "none";
+        const sel = $("edit-vu-origen");
+        const txt = $("edit-vu-origen-txt");
+        if (isWriteMode(sel) || normalizeCatalogValue(txt?.value)) {
+          await refreshOneCatalogSelect({
+            grupo: "vuelo_origen",
+            selectId: "edit-vu-origen",
+            inputId: "edit-vu-origen-txt",
+            newValue: v.origen,
+          });
+        }
       }
+
       if (v.destino) {
-        invalidateCatalog("vuelo_destino");
-        upsertOptionIntoSelect($("edit-vu-destino"), v.destino);
+        const sel = $("edit-vu-destino");
+        const txt = $("edit-vu-destino-txt");
+        if (isWriteMode(sel) || normalizeCatalogValue(txt?.value)) {
+          await refreshOneCatalogSelect({
+            grupo: "vuelo_destino",
+            selectId: "edit-vu-destino",
+            inputId: "edit-vu-destino-txt",
+            newValue: v.destino,
+          });
+        }
       }
     }
 
@@ -591,14 +778,29 @@ document.addEventListener("DOMContentLoaded", () => {
       const t = payload.tren;
 
       if (t.origen) {
-        invalidateCatalog("tren_origen");
-        upsertOptionIntoSelect($("edit-tr-origen"), t.origen);
-        if ($("edit-tr-origen-txt")) $("edit-tr-origen-txt").style.display = "none";
+        const sel = $("edit-tr-origen");
+        const txt = $("edit-tr-origen-txt");
+        if (isWriteMode(sel) || normalizeCatalogValue(txt?.value)) {
+          await refreshOneCatalogSelect({
+            grupo: "tren_origen",
+            selectId: "edit-tr-origen",
+            inputId: "edit-tr-origen-txt",
+            newValue: t.origen,
+          });
+        }
       }
+
       if (t.destino) {
-        invalidateCatalog("tren_destino");
-        upsertOptionIntoSelect($("edit-tr-destino"), t.destino);
-        if ($("edit-tr-destino-txt")) $("edit-tr-destino-txt").style.display = "none";
+        const sel = $("edit-tr-destino");
+        const txt = $("edit-tr-destino-txt");
+        if (isWriteMode(sel) || normalizeCatalogValue(txt?.value)) {
+          await refreshOneCatalogSelect({
+            grupo: "tren_destino",
+            selectId: "edit-tr-destino",
+            inputId: "edit-tr-destino-txt",
+            newValue: t.destino,
+          });
+        }
       }
     }
   }
@@ -970,8 +1172,6 @@ document.addEventListener("DOMContentLoaded", () => {
     // ===== VUELO =====
     if (tipoLower.includes("vuelo")) {
       const origen = valOrTxtFromSelectWrite("edit-vu-origen", "edit-vu-origen-txt");
-
-      // ✅ CAMBIO: destino también con escribir nuevo
       const destino = valOrTxtFromSelectWrite("edit-vu-destino", "edit-vu-destino-txt");
 
       const clase = ($("edit-vu-clase")?.value || "").trim();
@@ -1074,7 +1274,7 @@ document.addEventListener("DOMContentLoaded", () => {
     ], { firstText:"(Seleccionar)", firstValue:"" });
     initSelectConEscribirNuevo($("edit-tu-tipo-guia"), $("edit-tu-tipo-guia-otro"));
 
-    // ✅ NUEVO: Idioma de TOUR (igual que boleto, viene de catálogo "idiomas")
+    // ✅ Idioma TOUR desde catálogo "idiomas"
     await fillSelectCatalogoConEscribir(
       $("edit-tu-idioma"),
       $("edit-tu-idioma-txt"),
@@ -1129,14 +1329,13 @@ document.addEventListener("DOMContentLoaded", () => {
       "edit-be-lugar-select","edit-be-lugar-txt","edit-be-tipo-entrada","edit-be-tipo-entrada-txt","edit-be-tipo-guia","edit-be-tipo-guia-txt","edit-be-idioma","edit-be-idioma-txt",
       "edit-tu-tipo-guia","edit-tu-tipo-guia-otro","edit-tu-idioma","edit-tu-idioma-txt",
       "edit-trs-origen-select","edit-trs-origen-txt","edit-trs-destino-select","edit-trs-destino-txt","edit-trs-tipo","edit-trs-tipo-otro","edit-trs-vehiculo","edit-trs-vehiculo-txt","edit-trs-nota",
-      "edit-vu-origen","edit-vu-origen-txt","edit-vu-destino","edit-vu-clase","edit-vu-equipaje","edit-vu-escalas",
+      "edit-vu-origen","edit-vu-origen-txt","edit-vu-destino","edit-vu-destino-txt","edit-vu-clase","edit-vu-equipaje","edit-vu-escalas",
       "edit-tr-origen","edit-tr-origen-txt","edit-tr-destino","edit-tr-destino-txt","edit-tr-clase","edit-tr-equipaje","edit-tr-escalas","edit-tr-sillas"
     ].forEach(id => $(id)?.addEventListener(
       id.endsWith("-txt") || id.endsWith("-otro") ? "input" : "change",
       recomputeNombreAuto
     ));
   }
-
 
   function fillBaseEditFromDetalle(det) {
     const editProveedor = $("edit-id-proveedor");
@@ -1170,183 +1369,178 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function fillDinamicoEditFromDetalle(det, tipoLower) {
-  const bol  = det?.boleto_entrada || det?.boleto || det?.detalle_boleto || null;
-  const trs  = det?.traslado || det?.detalle_traslado || null;
-  const tour = det?.tour || det?.detalle_tour || null;
-  const vue  = det?.vuelo || det?.detalle_vuelo || null;
-  const tren = det?.tren || det?.detalle_tren || null;
+    const bol  = det?.boleto_entrada || det?.boleto || det?.detalle_boleto || null;
+    const trs  = det?.traslado || det?.detalle_traslado || null;
+    const tour = det?.tour || det?.detalle_tour || null;
+    const vue  = det?.vuelo || det?.detalle_vuelo || null;
+    const tren = det?.tren || det?.detalle_tren || null;
 
-  // ===== BOLETO =====
-  if (tipoLower.includes("boleto")) {
-    const lugarSel = $("edit-be-lugar-select");
-    const lugarTxt = $("edit-be-lugar-txt");
-    const lugarVal = pick(bol, ["boleto_entrada","lugar","entrada"], pick(det, ["boleto_entrada"], ""));
-    if (lugarSel) {
-      const exists = Array.from(lugarSel.options || []).some(o => o.value === lugarVal);
-      if (exists) { lugarSel.value = lugarVal; show(lugarTxt, false); }
-      else if (lugarVal) { lugarSel.value = "__write__"; show(lugarTxt, true); if (lugarTxt) lugarTxt.value = String(lugarVal); }
-      else { lugarSel.value = ""; show(lugarTxt, false); }
+    // ===== BOLETO =====
+    if (tipoLower.includes("boleto")) {
+      const lugarSel = $("edit-be-lugar-select");
+      const lugarTxt = $("edit-be-lugar-txt");
+      const lugarVal = pick(bol, ["boleto_entrada","lugar","entrada"], pick(det, ["boleto_entrada"], ""));
+      if (lugarSel) {
+        const exists = Array.from(lugarSel.options || []).some(o => o.value === lugarVal);
+        if (exists) { lugarSel.value = lugarVal; show(lugarTxt, false); }
+        else if (lugarVal) { lugarSel.value = "__write__"; show(lugarTxt, true); if (lugarTxt) lugarTxt.value = String(lugarVal); }
+        else { lugarSel.value = ""; show(lugarTxt, false); }
+      }
+
+      const teSel = $("edit-be-tipo-entrada");
+      const teTxt = $("edit-be-tipo-entrada-txt");
+      const teVal = pick(bol, ["tipo_entrada","tipo_entrada_otro"], "");
+      if (teSel) {
+        const exists = Array.from(teSel.options || []).some(o => o.value === teVal);
+        if (exists) { teSel.value = teVal; show(teTxt, false); }
+        else if (teVal) { teSel.value = "__write__"; show(teTxt, true); if (teTxt) teTxt.value = String(teVal); }
+        else { teSel.value = ""; show(teTxt, false); }
+      }
+
+      const tgSel = $("edit-be-tipo-guia");
+      const tgTxt = $("edit-be-tipo-guia-txt");
+      const tgVal = pick(bol, ["tipo_guia","tipo_guia_otro"], pick(det, ["tipo_guia"], ""));
+      if (tgSel) {
+        const exists = Array.from(tgSel.options || []).some(o => o.value === tgVal);
+        if (exists) { tgSel.value = tgVal; show(tgTxt, false); }
+        else if (tgVal) { tgSel.value = "__write__"; show(tgTxt, true); if (tgTxt) tgTxt.value = String(tgVal); }
+        else { tgSel.value = ""; show(tgTxt, false); }
+      }
+
+      const idSel = $("edit-be-idioma");
+      const idTxt = $("edit-be-idioma-txt");
+      const idVal = pick(bol, ["idioma","idioma_otro"], "");
+      if (idSel) {
+        const exists = Array.from(idSel.options || []).some(o => o.value === idVal);
+        if (exists) { idSel.value = idVal; show(idTxt, false); }
+        else if (idVal) { idSel.value = "__write__"; show(idTxt, true); if (idTxt) idTxt.value = String(idVal); }
+        else { idSel.value = ""; show(idTxt, false); }
+      }
     }
 
-    const teSel = $("edit-be-tipo-entrada");
-    const teTxt = $("edit-be-tipo-entrada-txt");
-    const teVal = pick(bol, ["tipo_entrada","tipo_entrada_otro"], "");
-    if (teSel) {
-      const exists = Array.from(teSel.options || []).some(o => o.value === teVal);
-      if (exists) { teSel.value = teVal; show(teTxt, false); }
-      else if (teVal) { teSel.value = "__write__"; show(teTxt, true); if (teTxt) teTxt.value = String(teVal); }
-      else { teSel.value = ""; show(teTxt, false); }
+    // ===== TRASLADO =====
+    if (tipoLower.includes("trasl")) {
+      const oSel = $("edit-trs-origen-select");
+      const oTxt = $("edit-trs-origen-txt");
+      const oVal = pick(trs, ["origen","origen_otro"], "");
+      if (oSel) {
+        const exists = Array.from(oSel.options || []).some(o => o.value === oVal);
+        if (exists) { oSel.value = oVal; show(oTxt, false); }
+        else if (oVal) { oSel.value = "__write__"; show(oTxt, true); if (oTxt) oTxt.value = String(oVal); }
+        else { oSel.value = ""; show(oTxt, false); }
+      }
+
+      const dSel = $("edit-trs-destino-select");
+      const dTxt = $("edit-trs-destino-txt");
+      const dVal = pick(trs, ["destino","destino_otro"], "");
+      if (dSel) {
+        const exists = Array.from(dSel.options || []).some(o => o.value === dVal);
+        if (exists) { dSel.value = dVal; show(dTxt, false); }
+        else if (dVal) { dSel.value = "__write__"; show(dTxt, true); if (dTxt) dTxt.value = String(dVal); }
+        else { dSel.value = ""; show(dTxt, false); }
+      }
+
+      const ttSel = $("edit-trs-tipo");
+      const ttTxt = $("edit-trs-tipo-otro");
+      const ttVal = pick(trs, ["tipo_traslado","tipo_traslado_otro"], "");
+      if (ttSel) {
+        const exists = Array.from(ttSel.options || []).some(o => o.value === ttVal);
+        if (exists) { ttSel.value = ttVal; show(ttTxt, false); }
+        else if (ttVal) { ttSel.value = "__write__"; show(ttTxt, true); if (ttTxt) ttTxt.value = String(ttVal); }
+        else { ttSel.value = ""; show(ttTxt, false); }
+      }
+
+      const vhSel = $("edit-trs-vehiculo");
+      const vhTxt = $("edit-trs-vehiculo-txt");
+      const vhVal = pick(trs, ["vehiculo","vehiculo_otro"], "");
+      if (vhSel) {
+        const exists = Array.from(vhSel.options || []).some(o => o.value === vhVal);
+        if (exists) { vhSel.value = vhVal; show(vhTxt, false); }
+        else if (vhVal) { vhSel.value = "__write__"; show(vhTxt, true); if (vhTxt) vhTxt.value = String(vhVal); }
+        else { vhSel.value = ""; show(vhTxt, false); }
+      }
+
+      if ($("edit-trs-nota")) $("edit-trs-nota").value = String(pick(trs, ["nota"], "")) || "";
     }
 
-    const tgSel = $("edit-be-tipo-guia");
-    const tgTxt = $("edit-be-tipo-guia-txt");
-    const tgVal = pick(bol, ["tipo_guia","tipo_guia_otro"], pick(det, ["tipo_guia"], ""));
-    if (tgSel) {
-      const exists = Array.from(tgSel.options || []).some(o => o.value === tgVal);
-      if (exists) { tgSel.value = tgVal; show(tgTxt, false); }
-      else if (tgVal) { tgSel.value = "__write__"; show(tgTxt, true); if (tgTxt) tgTxt.value = String(tgVal); }
-      else { tgSel.value = ""; show(tgTxt, false); }
+    // ===== TOUR =====
+    if (tipoLower.includes("excurs") || tipoLower.includes("visita") || tipoLower.includes("tour")) {
+      const tgSel = $("edit-tu-tipo-guia");
+      const tgTxt = $("edit-tu-tipo-guia-otro");
+      const tgVal = pick(tour, ["tipo_guia","tipo_guia_otro"], "");
+      if (tgSel) {
+        const exists = Array.from(tgSel.options || []).some(o => o.value === tgVal);
+        if (exists) { tgSel.value = tgVal; show(tgTxt, false); }
+        else if (tgVal) { tgSel.value = "__write__"; show(tgTxt, true); if (tgTxt) tgTxt.value = String(tgVal); }
+        else { tgSel.value = ""; show(tgTxt, false); }
+      }
+
+      const idSel = $("edit-tu-idioma");
+      const idTxt = $("edit-tu-idioma-txt");
+      const idVal = pick(tour, ["idioma","idioma_otro"], "");
+      if (idSel) {
+        const exists = Array.from(idSel.options || []).some(o => o.value === idVal);
+        if (exists) { idSel.value = idVal; show(idTxt, false); }
+        else if (idVal) { idSel.value = "__write__"; show(idTxt, true); if (idTxt) idTxt.value = String(idVal); }
+        else { idSel.value = ""; show(idTxt, false); }
+      }
     }
 
-    const idSel = $("edit-be-idioma");
-    const idTxt = $("edit-be-idioma-txt");
-    const idVal = pick(bol, ["idioma","idioma_otro"], "");
-    if (idSel) {
-      const exists = Array.from(idSel.options || []).some(o => o.value === idVal);
-      if (exists) { idSel.value = idVal; show(idTxt, false); }
-      else if (idVal) { idSel.value = "__write__"; show(idTxt, true); if (idTxt) idTxt.value = String(idVal); }
-      else { idSel.value = ""; show(idTxt, false); }
+    // ===== VUELO =====
+    if (tipoLower.includes("vuelo")) {
+      const oSel = $("edit-vu-origen");
+      const oTxt = $("edit-vu-origen-txt");
+      const oVal = String(pick(vue, ["origen","origen_otro"], "") || "").trim();
+      if (oSel) {
+        const exists = Array.from(oSel.options || []).some(o => o.value === oVal);
+        if (exists) { oSel.value = oVal; show(oTxt, false); }
+        else if (oVal) { oSel.value = "__write__"; show(oTxt, true); if (oTxt) oTxt.value = oVal; }
+        else { oSel.value = ""; show(oTxt, false); }
+      }
+
+      const dSel = $("edit-vu-destino");
+      const dTxt = $("edit-vu-destino-txt");
+      const dVal = String(pick(vue, ["destino"], "") || "").trim();
+      if (dSel) {
+        const exists = Array.from(dSel.options || []).some(o => o.value === dVal);
+        if (exists) { dSel.value = dVal; show(dTxt, false); }
+        else if (dVal) { dSel.value = "__write__"; show(dTxt, true); if (dTxt) dTxt.value = dVal; }
+        else { dSel.value = ""; show(dTxt, false); }
+      }
+
+      if ($("edit-vu-clase")) $("edit-vu-clase").value = String(pick(vue, ["clase"], "")) || "";
+      if ($("edit-vu-equipaje")) $("edit-vu-equipaje").value = String(pick(vue, ["equipaje"], "")) || "";
+      if ($("edit-vu-escalas")) $("edit-vu-escalas").value = String(pick(vue, ["escalas"], "")) || "";
+    }
+
+    // ===== TREN =====
+    if (tipoLower.includes("tren")) {
+      const oSel = $("edit-tr-origen");
+      const oTxt = $("edit-tr-origen-txt");
+      const oVal = String(pick(tren, ["origen","origen_otro"], "") || "").trim();
+      if (oSel) {
+        const exists = Array.from(oSel.options || []).some(o => o.value === oVal);
+        if (exists) { oSel.value = oVal; show(oTxt, false); }
+        else if (oVal) { oSel.value = "__write__"; show(oTxt, true); if (oTxt) oTxt.value = oVal; }
+        else { oSel.value = ""; show(oTxt, false); }
+      }
+
+      const dSel = $("edit-tr-destino");
+      const dTxt = $("edit-tr-destino-txt");
+      const dVal = String(pick(tren, ["destino"], "") || "").trim();
+      if (dSel) {
+        const exists = Array.from(dSel.options || []).some(o => o.value === dVal);
+        if (exists) { dSel.value = dVal; show(dTxt, false); }
+        else if (dVal) { dSel.value = "__write__"; show(dTxt, true); if (dTxt) dTxt.value = dVal; }
+        else { dSel.value = ""; show(dTxt, false); }
+      }
+
+      if ($("edit-tr-clase")) $("edit-tr-clase").value = String(pick(tren, ["clase"], "")) || "";
+      if ($("edit-tr-equipaje")) $("edit-tr-equipaje").value = String(pick(tren, ["equipaje"], "")) || "";
+      if ($("edit-tr-escalas")) $("edit-tr-escalas").value = String(pick(tren, ["escalas"], "")) || "";
+      if ($("edit-tr-sillas")) $("edit-tr-sillas").value = pick(tren, ["sillas_reservadas"], false) ? "1" : "0";
     }
   }
-
-  // ===== TRASLADO =====
-  if (tipoLower.includes("trasl")) {
-    const oSel = $("edit-trs-origen-select");
-    const oTxt = $("edit-trs-origen-txt");
-    const oVal = pick(trs, ["origen","origen_otro"], "");
-    if (oSel) {
-      const exists = Array.from(oSel.options || []).some(o => o.value === oVal);
-      if (exists) { oSel.value = oVal; show(oTxt, false); }
-      else if (oVal) { oSel.value = "__write__"; show(oTxt, true); if (oTxt) oTxt.value = String(oVal); }
-      else { oSel.value = ""; show(oTxt, false); }
-    }
-
-    const dSel = $("edit-trs-destino-select");
-    const dTxt = $("edit-trs-destino-txt");
-    const dVal = pick(trs, ["destino","destino_otro"], "");
-    if (dSel) {
-      const exists = Array.from(dSel.options || []).some(o => o.value === dVal);
-      if (exists) { dSel.value = dVal; show(dTxt, false); }
-      else if (dVal) { dSel.value = "__write__"; show(dTxt, true); if (dTxt) dTxt.value = String(dVal); }
-      else { dSel.value = ""; show(dTxt, false); }
-    }
-
-    const ttSel = $("edit-trs-tipo");
-    const ttTxt = $("edit-trs-tipo-otro");
-    const ttVal = pick(trs, ["tipo_traslado","tipo_traslado_otro"], "");
-    if (ttSel) {
-      const exists = Array.from(ttSel.options || []).some(o => o.value === ttVal);
-      if (exists) { ttSel.value = ttVal; show(ttTxt, false); }
-      else if (ttVal) { ttSel.value = "__write__"; show(ttTxt, true); if (ttTxt) ttTxt.value = String(ttVal); }
-      else { ttSel.value = ""; show(ttTxt, false); }
-    }
-
-    const vhSel = $("edit-trs-vehiculo");
-    const vhTxt = $("edit-trs-vehiculo-txt");
-    const vhVal = pick(trs, ["vehiculo","vehiculo_otro"], "");
-    if (vhSel) {
-      const exists = Array.from(vhSel.options || []).some(o => o.value === vhVal);
-      if (exists) { vhSel.value = vhVal; show(vhTxt, false); }
-      else if (vhVal) { vhSel.value = "__write__"; show(vhTxt, true); if (vhTxt) vhTxt.value = String(vhVal); }
-      else { vhSel.value = ""; show(vhTxt, false); }
-    }
-
-    if ($("edit-trs-nota")) $("edit-trs-nota").value = String(pick(trs, ["nota"], "")) || "";
-  }
-
-  // ===== TOUR =====
-  if (tipoLower.includes("excurs") || tipoLower.includes("visita") || tipoLower.includes("tour")) {
-    const tgSel = $("edit-tu-tipo-guia");
-    const tgTxt = $("edit-tu-tipo-guia-otro");
-    const tgVal = pick(tour, ["tipo_guia","tipo_guia_otro"], "");
-    if (tgSel) {
-      const exists = Array.from(tgSel.options || []).some(o => o.value === tgVal);
-      if (exists) { tgSel.value = tgVal; show(tgTxt, false); }
-      else if (tgVal) { tgSel.value = "__write__"; show(tgTxt, true); if (tgTxt) tgTxt.value = String(tgVal); }
-      else { tgSel.value = ""; show(tgTxt, false); }
-    }
-
-    const idSel = $("edit-tu-idioma");
-    const idTxt = $("edit-tu-idioma-txt");
-    const idVal = pick(tour, ["idioma","idioma_otro"], "");
-    if (idSel) {
-      const exists = Array.from(idSel.options || []).some(o => o.value === idVal);
-      if (exists) { idSel.value = idVal; show(idTxt, false); }
-      else if (idVal) { idSel.value = "__write__"; show(idTxt, true); if (idTxt) idTxt.value = String(idVal); }
-      else { idSel.value = ""; show(idTxt, false); }
-    }
-  }
-
-  // ===== VUELO =====
-  if (tipoLower.includes("vuelo")) {
-    // ✅ ORIGEN (faltaba en tu función)
-    const oSel = $("edit-vu-origen");
-    const oTxt = $("edit-vu-origen-txt");
-    const oVal = String(pick(vue, ["origen","origen_otro"], "") || "").trim();
-    if (oSel) {
-      const exists = Array.from(oSel.options || []).some(o => o.value === oVal);
-      if (exists) { oSel.value = oVal; show(oTxt, false); }
-      else if (oVal) { oSel.value = "__write__"; show(oTxt, true); if (oTxt) oTxt.value = oVal; }
-      else { oSel.value = ""; show(oTxt, false); }
-    }
-
-    // ✅ DESTINO (lo dejé como lo tenías, está bien)
-    const dSel = $("edit-vu-destino");
-    const dTxt = $("edit-vu-destino-txt");
-    const dVal = String(pick(vue, ["destino"], "") || "").trim();
-    if (dSel) {
-      const exists = Array.from(dSel.options || []).some(o => o.value === dVal);
-      if (exists) { dSel.value = dVal; show(dTxt, false); }
-      else if (dVal) { dSel.value = "__write__"; show(dTxt, true); if (dTxt) dTxt.value = dVal; }
-      else { dSel.value = ""; show(dTxt, false); }
-    }
-
-    if ($("edit-vu-clase")) $("edit-vu-clase").value = String(pick(vue, ["clase"], "")) || "";
-    if ($("edit-vu-equipaje")) $("edit-vu-equipaje").value = String(pick(vue, ["equipaje"], "")) || "";
-    if ($("edit-vu-escalas")) $("edit-vu-escalas").value = String(pick(vue, ["escalas"], "")) || "";
-  }
-
-  // ===== TREN =====
-  if (tipoLower.includes("tren")) {
-    // ✅ ORIGEN (faltaba en tu función)
-    const oSel = $("edit-tr-origen");
-    const oTxt = $("edit-tr-origen-txt");
-    const oVal = String(pick(tren, ["origen","origen_otro"], "") || "").trim();
-    if (oSel) {
-      const exists = Array.from(oSel.options || []).some(o => o.value === oVal);
-      if (exists) { oSel.value = oVal; show(oTxt, false); }
-      else if (oVal) { oSel.value = "__write__"; show(oTxt, true); if (oTxt) oTxt.value = oVal; }
-      else { oSel.value = ""; show(oTxt, false); }
-    }
-
-    // ✅ DESTINO (tu versión estaba bien, le puse trim)
-    const dSel = $("edit-tr-destino");
-    const dTxt = $("edit-tr-destino-txt");
-    const dVal = String(pick(tren, ["destino"], "") || "").trim();
-    if (dSel) {
-      const exists = Array.from(dSel.options || []).some(o => o.value === dVal);
-      if (exists) { dSel.value = dVal; show(dTxt, false); }
-      else if (dVal) { dSel.value = "__write__"; show(dTxt, true); if (dTxt) dTxt.value = dVal; }
-      else { dSel.value = ""; show(dTxt, false); }
-    }
-
-    if ($("edit-tr-clase")) $("edit-tr-clase").value = String(pick(tren, ["clase"], "")) || "";
-    if ($("edit-tr-equipaje")) $("edit-tr-equipaje").value = String(pick(tren, ["equipaje"], "")) || "";
-    if ($("edit-tr-escalas")) $("edit-tr-escalas").value = String(pick(tren, ["escalas"], "")) || "";
-    if ($("edit-tr-sillas")) $("edit-tr-sillas").value = pick(tren, ["sillas_reservadas"], false) ? "1" : "0";
-  }
-}
-
 
   function buildPayloadFromEditor(tipoLower) {
     const editTipoServ = $("edit-tipo-servicio");
@@ -1363,16 +1557,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const payload = {
       id_tipo: idTipo || undefined,
       id_ciudad: idCiudad || undefined,
-
-      // solo manda si hay algo
       nombre_wtravel: (editNombreAuto?.value || "").trim() || undefined,
-
       id_proveedor: Number(String(editProveedor?.value || "").trim() || 0) || undefined,
       tiempo_servicio: getTiempoEditValue() || undefined,
-
-      // privado siempre manda (porque el select siempre tiene 0/1)
       privado: String(editPrivado?.value || "0") === "1",
-
       descripcion: (editDesc?.value || "").trim() || undefined,
       link_reserva: (editLink?.value || "").trim() || undefined,
     };
@@ -1446,7 +1634,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (tipoLower.includes("vuelo")) {
       const origen = leerSelectOEscribir($("edit-vu-origen"), $("edit-vu-origen-txt"));
-      const destino = ($("edit-vu-destino")?.value || "").trim();
+      const destino = leerSelectOEscribir($("edit-vu-destino"), $("edit-vu-destino-txt"));
       const clase = ($("edit-vu-clase")?.value || "").trim();
       const equipaje = ($("edit-vu-equipaje")?.value || "").trim();
       const nEsc = Number(($("edit-vu-escalas")?.value || "").trim());
@@ -1489,9 +1677,11 @@ document.addEventListener("DOMContentLoaded", () => {
   // =========================
   async function cargarDetalleServicio(idServicio) {
     const key = String(idServicio);
-    if (detalleCacheById.has(key)) return detalleCacheById.get(key);
 
-    const data = await fetchJSON(`/api/servicios/${idServicio}`);
+    const cached = cache.getDetalle(key);
+    if (cached) return cached;
+
+    const data = await fetchJSON(`/api/servicios/${encodeURIComponent(key)}`);
     const det = (data && typeof data === "object" && (data.servicio || data.item))
       ? (data.servicio || data.item)
       : data;
@@ -1500,7 +1690,7 @@ document.addEventListener("DOMContentLoaded", () => {
       throw new Error("No se pudo cargar el detalle del servicio.");
     }
 
-    detalleCacheById.set(key, det);
+    cache.setDetalle(key, det);
     return det;
   }
 
@@ -1636,34 +1826,115 @@ document.addEventListener("DOMContentLoaded", () => {
     return Object.keys(o).length ? o : null;
   }
 
+  // =========================
+  // Pendiente (3): Validación FRONT igual a BACK
+  // =========================
+  function normTxt(v) {
+    return String(v ?? "").trim().replace(/\s+/g, " ");
+  }
+
+  function hasValue(v) {
+    return normTxt(v) !== "";
+  }
+
+  function validatePayloadByTipo(tipoLower, payload) {
+    // base (ya lo validas arriba, pero lo dejo por coherencia)
+    if (!payload?.id_tipo) return "Selecciona el tipo de servicio.";
+    if (!payload?.id_ciudad) return "Selecciona la ciudad.";
+    if (!payload?.id_proveedor) return "Selecciona un proveedor.";
+
+    // ===== VUELO (backend PUT exige: escalas, origen, destino) =====
+    if (tipoLower.includes("vuelo")) {
+      const v = payload.vuelo || {};
+      if (!hasValue(v.origen)) return "VUELO: falta origen.";
+      if (!hasValue(v.destino)) return "VUELO: falta destino.";
+      if (v.escalas === undefined || v.escalas === null || String(v.escalas).trim() === "") {
+        return "VUELO: falta escalas.";
+      }
+    }
+
+    // ===== TREN (backend PUT exige: escalas, origen, destino, sillas_reservadas) =====
+    if (tipoLower.includes("tren")) {
+      const t = payload.tren || {};
+      if (!hasValue(t.origen)) return "TREN: falta origen.";
+      if (!hasValue(t.destino)) return "TREN: falta destino.";
+      if (t.escalas === undefined || t.escalas === null || String(t.escalas).trim() === "") {
+        return "TREN: falta escalas.";
+      }
+      if (t.sillas_reservadas === undefined || t.sillas_reservadas === null || String(t.sillas_reservadas).trim() === "") {
+        return "TREN: falta sillas_reservadas.";
+      }
+    }
+
+    // ===== TRASLADO (backend PUT exige: origen y destino) =====
+    if (tipoLower.includes("trasl")) {
+      const tr = payload.traslado || {};
+      if (!hasValue(tr.origen)) return "TRASLADO: falta origen.";
+      if (!hasValue(tr.destino)) return "TRASLADO: falta destino.";
+    }
+
+    // ===== TOUR (backend PUT exige: tipo_guia e idioma) =====
+    if (tipoLower.includes("excurs") || tipoLower.includes("visita") || tipoLower.includes("tour")) {
+      const tu = payload.tour || {};
+
+      // tipo_guia
+      if (!hasValue(tu.tipo_guia)) return "TOUR: falta tipo_guia.";
+      if (tu.tipo_guia === "OTRO" && !hasValue(tu.tipo_guia_otro)) return "TOUR: tipo_guia OTRO requiere tipo_guia_otro.";
+
+      // idioma
+      if (!hasValue(tu.idioma)) return "TOUR: falta idioma.";
+      if (tu.idioma === "OTRO" && !hasValue(tu.idioma_otro)) return "TOUR: idioma OTRO requiere idioma_otro.";
+    }
+
+    // ===== BOLETO (backend PUT exige: lugar, tipo_entrada, tipo_guia, idioma) =====
+    if (tipoLower.includes("boleto")) {
+      const b = payload.boleto_entrada || {};
+      if (!hasValue(b.boleto_entrada)) return "BOLETO: falta boleto_entrada (lugar).";
+      if (!hasValue(b.tipo_entrada)) return "BOLETO: falta tipo_entrada.";
+      if (b.tipo_entrada === "OTRA" && !hasValue(b.tipo_entrada_otro)) return "BOLETO: tipo_entrada OTRA requiere tipo_entrada_otro.";
+      if (!hasValue(b.tipo_guia)) return "BOLETO: falta tipo_guia.";
+      if (!hasValue(b.idioma)) return "BOLETO: falta idioma.";
+    }
+
+    return null;
+  }
+
   async function guardarEdicionModalDatos() {
     setMsgEditar("");
     if (!modalDatosServicioId) return setMsgEditar("No hay servicio seleccionado.", true);
 
-    const det = await cargarDetalleServicio(modalDatosServicioId);
-    const tipoLower = getTipoLowerFromEditor() || inferTipoTextoFromDetalle(det);
-
-    const editTipoServ = $("edit-tipo-servicio");
-    const editCiudad = $("edit-ciudad");
-    const editProveedor = $("edit-id-proveedor");
-
-    const idTipo = Number(String(editTipoServ?.value || "").trim() || 0);
-    if (!idTipo) return setMsgEditar("Selecciona el tipo de servicio.", true);
-
-    const idCiud = Number(String(editCiudad?.value || "").trim() || 0);
-    if (!idCiud) return setMsgEditar("Selecciona la ciudad.", true);
-
-    const prov = Number(String(editProveedor?.value || "").trim());
-    if (!prov) return setMsgEditar("Selecciona un proveedor.", true);
-
-    recomputeNombreAuto();
-
-    let payload = buildPayloadFromEditor(tipoLower);
-    payload = cleanObject(payload);
-
-    const url = `/api/servicios/${modalDatosServicioId}`;
-
     try {
+      // 1) Traer detalle (cacheable) para inferir tipo si el select aún no lo da
+      const det = await cargarDetalleServicio(modalDatosServicioId);
+      const tipoLower = getTipoLowerFromEditor() || inferTipoTextoFromDetalle(det);
+
+      // 2) Validaciones mínimas base (ids)
+      const editTipoServ = $("edit-tipo-servicio");
+      const editCiudad = $("edit-ciudad");
+      const editProveedor = $("edit-id-proveedor");
+
+      const idTipo = Number(String(editTipoServ?.value || "").trim() || 0);
+      if (!idTipo) return setMsgEditar("Selecciona el tipo de servicio.", true);
+
+      const idCiud = Number(String(editCiudad?.value || "").trim() || 0);
+      if (!idCiud) return setMsgEditar("Selecciona la ciudad.", true);
+
+      const prov = Number(String(editProveedor?.value || "").trim());
+      if (!prov) return setMsgEditar("Selecciona un proveedor.", true);
+
+      // 3) Construir payload
+      recomputeNombreAuto();
+
+      let payload = buildPayloadFromEditor(tipoLower);
+      payload = cleanObject(payload);
+
+      // 4) Validación FRONT igual a BACK (Pendiente 3)
+      const err = validatePayloadByTipo(tipoLower, payload);
+      if (err) return setMsgEditar(err, true);
+
+      // 5) PUT
+      const url = `/api/servicios/${modalDatosServicioId}`;
+
       const data = await fetchJSON(url, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -1674,30 +1945,36 @@ document.addEventListener("DOMContentLoaded", () => {
         if (data?.mensaje || data?.error) throw new Error(data.mensaje || data.error);
       }
 
-      // ✅ Invalida catálogos para que lo “nuevo” aparezca al volver a abrir
-      ["tiempo_servicio","boleto_lugar","traslado_origen","traslado_destino","tren_origen","tren_destino","vuelo_origen"]
-        .forEach(g => { try { delete catalogCache[g]; } catch {} });
+      // ✅ Pendiente 7 (pro): invalidación central + refresh controlado
+      await cache.invalidateAfterSave({
+        servicioId: modalDatosServicioId,
+        tipoLower,
+        payload,
+        putResponse: data,
+        refreshCatalogosAfterSave,
+        reloadServicios: cargarServicios,
+        reloadPendientes: cargarServiciosSinPrecio,
+      });
 
-      detalleCacheById.delete(String(modalDatosServicioId));
+      // 6) Traer detalle fresco (ya invalidado)
       const detNuevo = await cargarDetalleServicio(modalDatosServicioId);
 
       renderModalDatosBonito(detNuevo);
       toggleEditModalDatos(false);
-
       setMsgEditar("Guardado listo ✅");
-
-      await cargarServicios();
-      await cargarServiciosSinPrecio();
     } catch (e) {
-      setMsgEditar(`No se pudo guardar. Backend dice: "${e.message}". Ruta usada: ${url}`, true);
+      const url = `/api/servicios/${modalDatosServicioId || ""}`;
+      setMsgEditar(humanizeBackendError(e, { contexto: "Guardar servicio", ruta: url }), true);
     }
   }
+
 
   // =========================
   // Modal 2: contexto (nombre + año)
   // =========================
   function nombreServicioSimpleById(idServicio) {
-    const s = servicioCacheById.get(String(idServicio));
+    const s = cache.getServicio(idServicio);
+
     if (!s) return null;
     return (s.servicio_texto || s.nombre_wtravel || `Servicio #${s.id}`).trim();
   }
@@ -1774,7 +2051,7 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (e) {
       modalPreciosServicioId = null;
       renderTablaPreciosModal([]);
-      setMsgModalPrecios(e.message, true);
+      setMsgModalPrecios(humanizeBackendError(e, { contexto: "Guardar precios", ruta: `/api/servicios/${modalPreciosServicioId}/precios` }), true);
       modalPrecios?.showModal();
     }
   }
@@ -1835,7 +2112,6 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       );
 
-      // fetchJSON ya lanza error si !ok, pero lo dejo por claridad
       if (!data.ok) throw new Error(data.mensaje || data.error || "Error guardando precios");
 
       setMsgModalPrecios(
@@ -1910,8 +2186,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const lista = await fetchLista("/api/servicios", ["servicios"]);
 
     allServicios = (lista || []).filter(s => !esAlojamientoByTipoId(s.id_tipo));
-    servicioCacheById.clear();
-    allServicios.forEach(s => servicioCacheById.set(String(s.id), s));
+    cache.setServiciosList(allServicios);
 
     filtrarServiciosYRenderSelect();
   }

@@ -36,3 +36,16 @@
   button.btn-etapa2:hover {
     background: #1e7e34;   /* verde más oscuro al pasar el mouse */
   }
+.nav-etapa3 {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.nav-etapa3 a {
+  text-decoration: none;
+}
+.nav-etapa3 a[aria-current="page"] {
+  font-weight: 700;
+  text-decoration: underline;
+}

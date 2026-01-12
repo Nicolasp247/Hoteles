@@ -2,37 +2,52 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <title>Cotizador – Cotizaciones</title>
+  <title>Etapa 3 – Cotizaciones y Precios</title>
 
-  <!-- De momento reutilizamos el CSS de cotización-editar
-       Más adelante lo refinamos o creamos uno general de etapa 3 -->
+  <!-- Reutilizamos por ahora el CSS existente -->
   <link rel="stylesheet" href="cotizacion-editar.css" />
 </head>
 <body>
   <header>
-    <h1>Cotizador – Cotizaciones</h1>
-    <nav>
-      <a href="../index.html">Inicio</a> |
-      <a href="cotizacion-crear.html">Nueva cotización</a>
+    <h1>Etapa 3 – Cotizaciones y Precios</h1>
+
+    <nav style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+      <a href="../index.html">Inicio</a>
+      <span class="muted">|</span>
+
+      <a href="./index-etapa3.html">Etapa 3</a>
+      <span class="muted">|</span>
+
+      <a href="./cotizacion-crear.html">Cotización crear</a>
+      <span class="muted">|</span>
+
+      <a href="./cotizacion-editar.html">Cotización editar</a>
+      <span class="muted">|</span>
+
+      <a href="./precios-servicios.html">Precios (Servicios)</a>
+      <span class="muted">|</span>
+
+      <a href="./precios-alojamiento.html">Precios (Alojamiento)</a>
     </nav>
+
     <hr />
   </header>
 
   <main>
     <!-- 1. Crear nueva cotización -->
     <section>
-      <h2>1. Crear nueva cotización</h2>
+      <h2>1) Crear nueva cotización</h2>
       <p>
-        Usa este botón para iniciar una cotización desde cero con los datos del pasajero y las fechas del viaje.
+        Inicia una cotización desde cero con los datos del pasajero y las fechas del viaje.
       </p>
       <button id="btn-nueva" type="button">
-        ➕ Crear nueva cotización
+        Crear nueva cotización
       </button>
     </section>
 
     <!-- 2. Buscar y editar cotizaciones existentes -->
     <section>
-      <h2>2. Buscar cotización existente</h2>
+      <h2>2) Buscar cotización existente</h2>
 
       <div class="busqueda-wrapper">
         <label for="txt-buscar">
@@ -61,6 +76,22 @@
       </table>
 
       <p id="mensaje-error" class="mensaje-error"></p>
+    </section>
+
+    <!-- 3. Accesos rápidos -->
+    <section>
+      <h2>3) Accesos rápidos</h2>
+      <p class="muted">Para ir directo a precios sin buscar nada.</p>
+
+      <div style="display:flex; flex-wrap:wrap; gap:10px;">
+        <button type="button" onclick="window.location.href='./precios-servicios.html'">
+          Precios de servicios (NO alojamiento)
+        </button>
+
+        <button type="button" onclick="window.location.href='./precios-alojamiento.html'">
+          Precios de alojamiento
+        </button>
+      </div>
     </section>
   </main>
 
