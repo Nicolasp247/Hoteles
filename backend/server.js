@@ -1,4 +1,8 @@
 // backend/server.js
+require("dotenv").config();
+
+const isProd = process.env.NODE_ENV === "production";
+
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
@@ -31,13 +35,14 @@ app.get("/api/ping", async (_req, res) => {
       paises: paisRow[0]?.n ?? 0,
     });
   } catch (e) {
-    console.error("PING ERROR:", e);
-    res.status(500).json({ error: String(e) });
+    return next(e);
   }
 });
 
 // --- Endpoint de inspección del esquema ---
 app.get("/api/_meta/schema", async (_req, res) => {
+  if (isProd) return res.status(404).send("Not found");
+
   try {
     const [cols] = await pool.query(`
       SELECT 
@@ -67,8 +72,7 @@ app.get("/api/_meta/schema", async (_req, res) => {
 
     res.json({ columns: cols, foreignKeys: fks });
   } catch (e) {
-    console.error("ERROR /api/_meta/schema", e);
-    res.status(500).json({ error: String(e) });
+    return next(e);
   }
 });
 
@@ -100,15 +104,31 @@ app.use("/api", (_req, res) => {
   res.status(404).json({ error: "Ruta no encontrada" });
 });
 
-// Manejador de errores global
+// Manejador de errores global (SIEMPRE al final, antes de app.listen)
 app.use((err, _req, res, next) => {
   if (res.headersSent) return next(err);
-  console.error("UNCAUGHT ERROR:", err);
-  res.status(500).json({ error: String(err) });
+
+  const status = err.status || 500;
+
+  if (!isProd) {
+    console.error("UNCAUGHT ERROR:", err);
+    return res.status(status).json({
+      error: err.message || "Error interno del servidor",
+      stack: err.stack,
+    });
+  }
+
+  // En producción, log mínimo, sin stack al cliente
+  console.error("UNCAUGHT ERROR:", err.message || "Error interno del servidor");
+  return res.status(status).json({
+    error: "Error interno del servidor",
+  });
 });
 
 // === Iniciar servidor (AL FINAL) ===
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
+
 app.listen(PORT, () => {
-  console.log("Servidor backend corriendo en puerto", PORT);
+  console.log(`Servidor corriendo en puerto ${PORT}`);
 });
+
