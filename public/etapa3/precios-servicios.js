@@ -1980,9 +1980,12 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function setContextoModalPrecios(idServicio) {
+    const idKey = String(idServicio);
+
     const nombre =
       nombreServicioSimpleById(idServicio) ||
-      (detalleCacheById.get(String(idServicio))?.nombre_wtravel || null) ||
+      (cache.getServicio(idKey)?.nombre_wtravel || null) ||
+      (cache.getDetalle(idKey)?.nombre_wtravel || null) ||
       `Servicio #${idServicio}`;
 
     if (mpServicioNombre) mpServicioNombre.textContent = nombre;
@@ -2189,6 +2192,7 @@ document.addEventListener("DOMContentLoaded", () => {
     cache.setServiciosList(allServicios);
 
     filtrarServiciosYRenderSelect();
+    cache.setServiciosList(allServicios);
   }
 
   function filtrarServiciosYRenderSelect() {

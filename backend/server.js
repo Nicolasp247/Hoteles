@@ -21,15 +21,28 @@ const PUBLIC_DIR = path.resolve(__dirname, "..", "public");
 app.use(express.static(PUBLIC_DIR));
 console.log("[STATIC] Sirviendo desde:", PUBLIC_DIR);
 
+// =========================
+// Rutas de exportación Excel
+// =========================
+
+const testExcelController = require("./src/exports/excel/controllers/testExcel.controller");
+
+// Ruta de prueba (mock)
+app.get("/api/exports/test.xlsx", testExcelController);
+
+// =========================
+// Fin rutas exportación
+// =========================
+
 // --- Health / Ping ---
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
-app.get("/api/ping", async (_req, res) => {
+app.get("/api/ping", async (_req, res, next) => {
   try {
     const [dbRow] = await pool.query("SELECT DATABASE() AS db");
     const [contRow] = await pool.query("SELECT COUNT(*) AS n FROM Continente");
     const [paisRow] = await pool.query("SELECT COUNT(*) AS n FROM Pais");
-    res.json({
+    return res.json({
       database: dbRow[0]?.db || null,
       continentes: contRow[0]?.n ?? 0,
       paises: paisRow[0]?.n ?? 0,
@@ -40,7 +53,7 @@ app.get("/api/ping", async (_req, res) => {
 });
 
 // --- Endpoint de inspección del esquema ---
-app.get("/api/_meta/schema", async (_req, res) => {
+app.get("/api/_meta/schema", async (_req, res, next) => {
   if (isProd) return res.status(404).send("Not found");
 
   try {

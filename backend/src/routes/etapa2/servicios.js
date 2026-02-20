@@ -156,7 +156,7 @@ router.get("/proveedores", async (_req, res) => {
    ✅ nombre_wtravel es AUTOMÁTICO (generado por buildNombreWtravel)
    ✅ Devuelve también servicio_texto (igual a nombre_wtravel)
 ========================================================= */
-router.post("/servicios", async (req, res) => {
+router.post("/servicios", async (req, res, next) => {
   let conn;
   try {
     conn = await pool.getConnection();
@@ -560,16 +560,13 @@ router.post("/servicios", async (req, res) => {
       });
     }
 
-    console.error("POST /servicios", e);
-    return res.status(500).json({
-      ok: false,
-      mensaje: "Error creando servicio",
-      error: e.message,
-    });
+    return next(e);
+
   } finally {
     try { if (conn) conn.release(); } catch {}
   }
 });
+
 /* =========================================================
    GET /api/servicios
    ✅ servicio_texto = nombre_wtravel
@@ -617,6 +614,147 @@ router.get("/servicios", async (_req, res) => {
       mensaje: "Error listando servicios",
       error: e.message,
     });
+  } finally {
+    try { if (conn) conn.release(); } catch {}
+  }
+});
+
+router.get("/servicios/:id", requireNumericIdParam, async (req, res) => {
+  let conn;
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ ok: false, mensaje: "ID inválido." });
+    }
+
+    conn = await pool.getConnection();
+
+    const [[srv]] = await conn.execute(
+      `
+      SELECT
+        s.id,
+        s.id_tipo,
+        s.id_proveedor,
+        s.id_ciudad,
+        s.nombre_wtravel,
+        s.tiempo_servicio,
+        s.privado,
+        s.descripcion,
+        s.link_reserva,
+        ts.nombre AS tipo,
+        c.nombre  AS ciudad,
+        pa.id     AS id_pais,
+        ct.id     AS id_continente
+      FROM servicio s
+      JOIN tiposervicio ts ON s.id_tipo = ts.id
+      JOIN ciudad c        ON s.id_ciudad = c.id
+      JOIN pais pa         ON c.id_pais = pa.id
+      JOIN continente ct   ON pa.id_continente = ct.id
+      WHERE s.id = ?
+      `,
+      [id]
+    );
+
+    if (!srv) {
+      return res.status(404).json({ ok: false, mensaje: "Servicio no encontrado." });
+    }
+
+    const [[aloj]] = await conn.execute(`SELECT * FROM alojamiento WHERE id_servicio = ?`, [id]);
+    const [[bole]] = await conn.execute(`SELECT * FROM boleto_entrada WHERE id_servicio = ?`, [id]);
+    const [[vue]]  = await conn.execute(`SELECT * FROM vuelo WHERE id_servicio = ?`, [id]);
+    const [[tre]]  = await conn.execute(`SELECT * FROM tren WHERE id_servicio = ?`, [id]);
+    const [[tra]]  = await conn.execute(`SELECT * FROM traslado WHERE id_servicio = ?`, [id]);
+    const [[tou]]  = await conn.execute(`SELECT * FROM tour WHERE id_servicio = ?`, [id]);
+
+    return res.json({
+      ok: true,
+      servicio: {
+        ...srv,
+        servicio_texto: srv.nombre_wtravel || `Servicio #${srv.id}`,
+      },
+      detalles: {
+        alojamiento: aloj || null,
+        boleto_entrada: bole || null,
+        vuelo: vue || null,
+        tren: tre || null,
+        traslado: tra || null,
+        tour: tou || null,
+      },
+    });
+  } catch (e) {
+    console.error("GET /servicios/:id", e);
+    return res.status(500).json({ ok: false, mensaje: "Error leyendo servicio", error: e.message });
+  } finally {
+    try { if (conn) conn.release(); } catch {}
+  }
+});
+
+router.put("/servicios/:id", requireNumericIdParam, async (req, res) => {
+  let conn;
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ ok: false, mensaje: "ID inválido." });
+    }
+
+    const body = req.body || {};
+    const {
+      nombre_wtravel,
+      tiempo_servicio,
+      privado,
+      descripcion,
+      link_reserva,
+      alojamiento,
+      boleto_entrada,
+      vuelo,
+      tren,
+      traslado,
+      tour,
+    } = body;
+
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+
+    const [upd] = await conn.execute(
+      `
+      UPDATE servicio
+      SET
+        nombre_wtravel = COALESCE(?, nombre_wtravel),
+        tiempo_servicio = COALESCE(?, tiempo_servicio),
+        privado = COALESCE(?, privado),
+        descripcion = COALESCE(?, descripcion),
+        link_reserva = COALESCE(?, link_reserva)
+      WHERE id = ?
+      `,
+      [
+        nombre_wtravel != null ? normalizeCatalogValue(nombre_wtravel) : null,
+        tiempo_servicio != null ? toTime(tiempo_servicio) : null,
+        privado === undefined ? null : (privado ? 1 : 0),
+        descripcion != null ? String(descripcion).trim() : null,
+        link_reserva != null ? String(link_reserva).trim() : null,
+        id,
+      ]
+    );
+
+    if (upd.affectedRows === 0) {
+      await conn.rollback();
+      return res.status(404).json({ ok: false, mensaje: "Servicio no encontrado." });
+    }
+
+    // Upserts 1:1 (solo si vienen en el body)
+    if (alojamiento)     await upsertDynamicOneToOne(conn, "alojamiento", id, alojamiento);
+    if (boleto_entrada)  await upsertDynamicOneToOne(conn, "boleto_entrada", id, boleto_entrada);
+    if (vuelo)           await upsertDynamicOneToOne(conn, "vuelo", id, vuelo);
+    if (tren)            await upsertDynamicOneToOne(conn, "tren", id, tren);
+    if (traslado)        await upsertDynamicOneToOne(conn, "traslado", id, traslado);
+    if (tour)            await upsertDynamicOneToOne(conn, "tour", id, tour);
+
+    await conn.commit();
+    return res.json({ ok: true, mensaje: "Servicio actualizado", id_servicio: id });
+  } catch (e) {
+    try { if (conn) await conn.rollback(); } catch {}
+    console.error("PUT /servicios/:id", e);
+    return res.status(500).json({ ok: false, mensaje: "Error actualizando servicio", error: e.message });
   } finally {
     try { if (conn) conn.release(); } catch {}
   }

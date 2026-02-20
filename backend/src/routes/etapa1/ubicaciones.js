@@ -193,20 +193,37 @@ router.get('/zonas', async (req, res) => {
   }
 });
 
-// Eliminar una zona y sus referencias en HotelZona
-router.delete('/zona/:id', async (req, res) => {
+// Eliminar una zona y sus referencias en HotelZona (ATÓMICO)
+router.delete("/zona/:id", async (req, res, next) => {
+  let conn;
   try {
-    const { id } = req.params;
-    await pool.query('DELETE FROM HotelZona WHERE zona_id = ?', [id]);
-    const [result] = await pool.query('DELETE FROM Zona WHERE id = ?', [id]);
-    if (result.affectedRows === 0) return res.status(404).json({ error: 'Zona no encontrada.' });
-    res.json({ success: true });
+    const idZona = Number(req.params.id);
+    if (!Number.isInteger(idZona) || idZona <= 0) {
+      return res.status(400).json({ error: "ID de zona inválido." });
+    }
+
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+
+    await conn.query("DELETE FROM HotelZona WHERE zona_id = ?", [idZona]);
+    const [result] = await conn.query("DELETE FROM Zona WHERE id = ?", [idZona]);
+
+    if (result.affectedRows === 0) {
+      await conn.rollback();
+      return res.status(404).json({ error: "Zona no encontrada." });
+    }
+
+    await conn.commit();
+    return res.json({ success: true });
   } catch (err) {
-    console.error('DELETE /zona/:id', err);
-    res.status(500).json({ error: String(err) });
+    if (conn) {
+      try { await conn.rollback(); } catch (_) {}
+    }
+    return next(err);
+  } finally {
+    if (conn) conn.release();
   }
 });
-
 
 
 // Listar TODOS los países (opcionalmente con continente)
