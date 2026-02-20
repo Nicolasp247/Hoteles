@@ -1,57 +1,25 @@
 // src/routes/etapa1/hoteles.js
+const { validate } = require("../../middlewares/validate");
+const {
+  schemaHotelCreate,
+  schemaHotelUpdate,
+  schemaHotelIdParams,
+} = require("../../validators/hoteles.validator");
+
 const router = require("express").Router();
 const pool = require("../../db"); // <-- PromisePool en ../../db
 
 // ==============================
 // Crear hotel + relaciones zonas
 // ==============================
-router.post("/hotel", async (req, res) => {
-  try {
-    let {
-      nombre,
-      estrellas,
-      booking_score,
-      tripadvisor_score,
-      descripcion,
-      link_booking,
-      link_tripadvisor,
-      zonas,
-      id_ciudad,
-    } = req.body;
-
-    if (!nombre || !id_ciudad || !estrellas) {
-      return res
-        .status(400)
-        .json({ error: "Faltan campos obligatorios (nombre, estrellas, id_ciudad)." });
-    }
-
-    nombre = nombre.trim().toUpperCase();
-    link_booking = link_booking ? link_booking.trim() : null;
-    link_tripadvisor = link_tripadvisor ? link_tripadvisor.trim() : null;
-
-    // Validar unicidad de enlaces
-    const [dupLinks] = await pool.query(
-      "SELECT id FROM Hotel WHERE (link_booking = ? AND ? IS NOT NULL) OR (link_tripadvisor = ? AND ? IS NOT NULL)",
-      [link_booking, link_booking, link_tripadvisor, link_tripadvisor]
-    );
-    if (dupLinks.length > 0) {
-      return res
-        .status(400)
-        .json({ error: "El enlace de Booking o TripAdvisor ya está registrado." });
-    }
-
-    // Validar nombre
-    const [dupName] = await pool.query("SELECT id FROM Hotel WHERE nombre = ?", [nombre]);
-    if (dupName.length > 0) {
-      return res.status(400).json({ error: "Ya existe un hotel con ese nombre." });
-    }
-
-    // Insertar hotel
-    const [insHotel] = await pool.query(
-      `INSERT INTO Hotel
-       (nombre, estrellas, booking_score, tripadvisor_score, descripcion, link_booking, link_tripadvisor, id_ciudad)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
+router.post(
+  "/hotel",
+  validate({ body: schemaHotelCreate }),
+  async (req, res, next) => {
+    let conn;
+    try {
+      // ✅ Ya viene validado/normalizado por Zod
+      const {
         nombre,
         estrellas,
         booking_score,
@@ -59,47 +27,123 @@ router.post("/hotel", async (req, res) => {
         descripcion,
         link_booking,
         link_tripadvisor,
+        zonas,
         id_ciudad,
-      ]
-    );
-    const hotelId = insHotel.insertId;
+      } = req.body;
 
-    // Validación zonas
-    if (!Array.isArray(zonas) || zonas.length === 0) {
-      return res.status(400).json({ error: "Debes seleccionar al menos una zona." });
+      conn = await pool.getConnection();
+      await conn.beginTransaction();
+
+      // Validar unicidad de enlaces
+      const [dupLinks] = await conn.query(
+        `SELECT id
+         FROM Hotel
+         WHERE (link_booking = ? AND ? IS NOT NULL)
+            OR (link_tripadvisor = ? AND ? IS NOT NULL)`,
+        [link_booking, link_booking, link_tripadvisor, link_tripadvisor]
+      );
+
+      if (dupLinks.length > 0) {
+        // No hemos escrito nada, pero igual “cerramos limpio”
+        await conn.rollback();
+        return res.status(400).json({
+          ok: false,
+          mensaje: "El enlace de Booking o TripAdvisor ya está registrado.",
+        });
+      }
+
+      // Validar nombre único
+      const [dupName] = await conn.query(
+        "SELECT id FROM Hotel WHERE nombre = ?",
+        [nombre]
+      );
+
+      if (dupName.length > 0) {
+        await conn.rollback();
+        return res.status(400).json({
+          ok: false,
+          mensaje: "Ya existe un hotel con ese nombre.",
+        });
+      }
+
+      // Insertar hotel
+      const [insHotel] = await conn.query(
+        `INSERT INTO Hotel
+          (nombre, estrellas, booking_score, tripadvisor_score, descripcion, link_booking, link_tripadvisor, id_ciudad)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          nombre,
+          estrellas,
+          booking_score,
+          tripadvisor_score,
+          descripcion,
+          link_booking,
+          link_tripadvisor,
+          id_ciudad,
+        ]
+      );
+
+      const hotelId = insHotel.insertId;
+
+      // Insertar zonas
+      for (const z of zonas) {
+        await conn.query(
+          "INSERT INTO HotelZona (hotel_id, zona_id, metros) VALUES (?, ?, ?)",
+          [hotelId, z.id_zona, z.metros]
+        );
+      }
+
+      await conn.commit();
+      return res.status(201).json({ ok: true, id: hotelId });
+    } catch (err) {
+      try {
+        if (conn) await conn.rollback();
+      } catch {}
+      return next(err);
+    } finally {
+      try {
+        if (conn) conn.release();
+      } catch {}
     }
-
-    // Insertar zonas
-    for (const z of zonas) {
-      await pool.query("INSERT INTO HotelZona (hotel_id, zona_id, metros) VALUES (?, ?, ?)", [
-        hotelId,
-        z.id_zona,
-        z.metros,
-      ]);
-    }
-
-    res.json({ success: true, id: hotelId });
-  } catch (err) {
-    console.error("POST /hotel", err);
-    res.status(500).json({ error: String(err) });
   }
-});
+);
 
 // ==============================
 // Eliminar hotel (y relaciones)
 // ==============================
-router.delete("/hotel/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    await pool.query("DELETE FROM HotelZona WHERE hotel_id = ?", [id]);
-    const [del] = await pool.query("DELETE FROM Hotel WHERE id = ?", [id]);
-    if (del.affectedRows === 0) return res.status(404).json({ error: "Hotel no encontrado." });
-    res.json({ success: true });
-  } catch (err) {
-    console.error("DELETE /hotel/:id", err);
-    res.status(500).json({ error: String(err) });
+router.delete(
+  "/hotel/:id",
+  validate({ params: schemaHotelIdParams }),
+  async (req, res, next) => {
+    let conn;
+    try {
+      const { id: idHotel } = req.params; // ✅ ya viene int positivo por Zod
+
+      conn = await pool.getConnection();
+      await conn.beginTransaction();
+
+      await conn.query("DELETE FROM HotelZona WHERE hotel_id = ?", [idHotel]);
+
+      const [del] = await conn.query("DELETE FROM Hotel WHERE id = ?", [idHotel]);
+      if (del.affectedRows === 0) {
+        await conn.rollback();
+        return res.status(404).json({ ok: false, mensaje: "Hotel no encontrado." });
+      }
+
+      await conn.commit();
+      return res.json({ ok: true });
+    } catch (err) {
+      try {
+        if (conn) await conn.rollback();
+      } catch {}
+      return next(err);
+    } finally {
+      try {
+        if (conn) conn.release();
+      } catch {}
+    }
   }
-});
+);
 
 // =========================================
 // Listar hoteles (para selección rápida)
@@ -224,85 +268,106 @@ router.get("/hoteles-por-ciudad/:id_ciudad", async (req, res) => {
 // ==================================
 // Editar: detalle (con zonas)
 // ==================================
-router.get("/hotel-detalle/:id_hotel", async (req, res) => {
+router.get("/hotel-detalle/:id_hotel", async (req, res, next) => {
   try {
-    const { id_hotel } = req.params;
+    const idHotel = Number(req.params.id_hotel);
+    if (!Number.isInteger(idHotel) || idHotel <= 0) {
+      return res.status(400).json({ error: "ID de hotel inválido." });
+    }
 
-    const [hot] = await pool.query("SELECT * FROM Hotel WHERE id = ?", [id_hotel]);
+    const [hot] = await pool.query("SELECT * FROM Hotel WHERE id = ?", [idHotel]);
     if (hot.length === 0) return res.status(404).json({ error: "Hotel no encontrado" });
+
     const hotel = hot[0];
 
     const [zonas] = await pool.query(
-      "SELECT zona_id AS id_zona, metros FROM HotelZona WHERE hotel_id = ? ORDER BY id ASC LIMIT 2",
-      [id_hotel]
+      "SELECT zona_id AS id_zona, metros FROM HotelZona WHERE hotel_id = ? ORDER BY zona_id ASC",
+      [idHotel]
     );
-    hotel.zonas = zonas;
 
-    res.json(hotel);
+    hotel.zonas = zonas;
+    return res.json(hotel);
   } catch (err) {
-    console.error("GET /hotel-detalle/:id_hotel", err);
-    res.status(500).json({ error: String(err) });
+    return next(err);
   }
 });
 
 // ==================================
 // Editar: actualizar hotel + zonas
 // ==================================
-router.put("/hotel/:id", async (req, res) => {
-  try {
-    const idHotel = req.params.id;
-    const {
-      nombre,
-      estrellas,
-      booking_score,
-      tripadvisor_score,
-      descripcion,
-      link_booking,
-      link_tripadvisor,
-      zonas,
-    } = req.body;
-
-    const [upd] = await pool.query(
-      `UPDATE Hotel SET 
-        nombre = ?, 
-        estrellas = ?, 
-        booking_score = ?, 
-        tripadvisor_score = ?, 
-        descripcion = ?, 
-        link_booking = ?, 
-        link_tripadvisor = ?
-      WHERE id = ?`,
-      [
-        nombre.trim().toUpperCase(),
+router.put(
+  "/hotel/:id",
+  validate({ params: schemaHotelIdParams, body: schemaHotelUpdate }),
+  async (req, res, next) => {
+    let conn;
+    try {
+      // ✅ ya viene validado y normalizado por Zod
+      const { id: idHotel } = req.params;
+      const {
+        nombre,
         estrellas,
         booking_score,
         tripadvisor_score,
         descripcion,
-        link_booking ? link_booking.trim() : null,
-        link_tripadvisor ? link_tripadvisor.trim() : null,
-        idHotel,
-      ]
-    );
+        link_booking,
+        link_tripadvisor,
+        zonas,
+      } = req.body;
 
-    if (upd.affectedRows === 0) return res.status(404).json({ error: "Hotel no encontrado." });
+      conn = await pool.getConnection();
+      await conn.beginTransaction();
 
-    await pool.query("DELETE FROM HotelZona WHERE hotel_id = ?", [idHotel]);
-
-    if (Array.isArray(zonas) && zonas.length > 0) {
-      for (const z of zonas) {
-        await pool.query("INSERT INTO HotelZona (hotel_id, zona_id, metros) VALUES (?, ?, ?)", [
+      // Actualizar hotel
+      const [upd] = await conn.query(
+        `UPDATE Hotel SET 
+          nombre = ?, 
+          estrellas = ?, 
+          booking_score = ?, 
+          tripadvisor_score = ?, 
+          descripcion = ?, 
+          link_booking = ?, 
+          link_tripadvisor = ?
+        WHERE id = ?`,
+        [
+          nombre,
+          estrellas,
+          booking_score,
+          tripadvisor_score,
+          descripcion,
+          link_booking,
+          link_tripadvisor,
           idHotel,
-          z.id_zona,
-          z.metros,
-        ]);
-      }
-    }
+        ]
+      );
 
-    res.json({ success: true });
-  } catch (err) {
-    console.error("PUT /hotel/:id", err);
-    res.status(500).json({ error: String(err) });
+      if (upd.affectedRows === 0) {
+        await conn.rollback();
+        return res.status(404).json({ ok: false, mensaje: "Hotel no encontrado." });
+      }
+
+      // Reemplazar zonas (todo dentro de la transacción)
+      await conn.query("DELETE FROM HotelZona WHERE hotel_id = ?", [idHotel]);
+
+      for (const z of zonas) {
+        await conn.query(
+          "INSERT INTO HotelZona (hotel_id, zona_id, metros) VALUES (?, ?, ?)",
+          [idHotel, z.id_zona, z.metros]
+        );
+      }
+
+      await conn.commit();
+      return res.json({ ok: true });
+    } catch (err) {
+      try {
+        if (conn) await conn.rollback();
+      } catch {}
+      return next(err);
+    } finally {
+      try {
+        if (conn) conn.release();
+      } catch {}
+    }
   }
-});
+);
 
 module.exports = router;

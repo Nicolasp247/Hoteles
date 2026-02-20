@@ -50,7 +50,8 @@ router.get("/hoteles/precios", async (req, res) => {
   }
 });
 
-router.put("/hoteles/precios", async (req, res) => {
+router.put("/hoteles/precios", async (req, res, next) => {
+  let conn;
   try {
     const hotel_id = toInt(req.query.hotel_id);
     const anio = toInt(req.query.anio);
@@ -77,6 +78,9 @@ router.put("/hoteles/precios", async (req, res) => {
         precio_usd = VALUES(precio_usd)
     `;
 
+    conn = await db.getConnection();
+    await conn.beginTransaction();
+
     for (const p of precios) {
       const mes = toMes(p.mes);
       const precio = (p.precio_usd === null || p.precio_usd === "" || p.precio_usd === undefined)
@@ -84,17 +88,23 @@ router.put("/hoteles/precios", async (req, res) => {
         : Number(p.precio_usd);
 
       if (!mes) continue;
+
       const precioFinal = (precio == null || Number.isNaN(precio) || precio < 0) ? null : precio;
 
-      await db.execute(sql, [
+      await conn.execute(sql, [
         hotel_id, categoria_hotel, categoria_hab, regimen, anio, mes, tipo_habitacion, precioFinal
       ]);
     }
 
-    res.json({ ok: true, mensaje: "Guardado" });
+    await conn.commit();
+    return res.json({ ok: true, mensaje: "Guardado" });
   } catch (e) {
-    console.error("PUT /hoteles/precios", e);
-    res.status(500).json({ ok: false, mensaje: "Error guardando precios", error: e.message });
+    if (conn) {
+      try { await conn.rollback(); } catch (_) {}
+    }
+    return next(e);
+  } finally {
+    if (conn) conn.release();
   }
 });
 

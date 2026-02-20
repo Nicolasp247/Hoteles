@@ -356,10 +356,10 @@ router.get("/cotizaciones", async (_req, res) => {
   }
 });
 
-router.get("/cotizaciones/:id", async (req, res) => {
+router.get("/cotizaciones/:id", async (req, res, next) => {
   try {
-    const id = parseInt(req.params.id, 10);
-    if (Number.isNaN(id)) {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) {
       return res.status(400).json({ ok: false, mensaje: "ID de cotización inválido." });
     }
 
@@ -429,25 +429,19 @@ router.get("/cotizaciones/:id", async (req, res) => {
       [id]
     );
 
-    const items = itemRowsRaw.map(row => ({
+    const items = itemRowsRaw.map((row) => ({
       ...row,
-      servicio_texto: buildServicioTexto(row)
+      servicio_texto: buildServicioTexto(row),
     }));
 
     return res.json({
       ok: true,
       cotizacion: cabecera,
       cabecera,
-      items
+      items,
     });
-
   } catch (error) {
-    console.error("Error al obtener cotización:", error);
-    return res.status(500).json({
-      ok: false,
-      mensaje: "Error interno al obtener la cotización.",
-      error: error.message
-    });
+    return next(error);
   }
 });
 

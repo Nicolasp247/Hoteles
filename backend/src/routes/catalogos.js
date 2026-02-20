@@ -95,7 +95,7 @@ router.get("/catalogos/:grupo", async (req, res) => {
 });
 
 // Devuelve todo lo que necesita el front (enums + catálogos relevantes)
-router.get("/catalogos/config", async (_req, res) => {
+router.get("/catalogos/config", async (_req, res, next) => {
   try {
     await hasActivoColumn();
 
@@ -129,7 +129,7 @@ router.get("/catalogos/config", async (_req, res) => {
       getCat("aloj_categoria_hab_otro"),
     ]);
 
-    res.json({
+    return res.json({
       ok: true,
       enums: {
         alojamiento: {
@@ -149,8 +149,7 @@ router.get("/catalogos/config", async (_req, res) => {
       },
     });
   } catch (e) {
-    console.error("GET /catalogos/config", e);
-    res.status(500).json({ ok: false, mensaje: "Error en config de catálogos", error: e.message });
+    return next(e);
   }
 });
 
