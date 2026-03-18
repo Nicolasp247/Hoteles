@@ -19,17 +19,43 @@ document.addEventListener("DOMContentLoaded", () => {
   const monedaOtroContainer = document.getElementById("moneda_otro_container");
   const monedaOtroInput = document.getElementById("moneda_otro");
 
+  const destinoSelect = document.getElementById("destino");
+
   const resumenPersonasEl = document.getElementById("resumen-personas");
   const nombrePreviewEl = document.getElementById("nombre_cotizacion_preview");
 
   const mensajeErrorEl = document.getElementById("mensaje-error");
   const mensajeOkEl = document.getElementById("mensaje-ok");
 
+  // ✅ Cache de continentes para sacar la sigla rápido
+  const continentesById = new Map();
+
   // --- Helpers ---
 
   function intOrZero(value) {
     const n = parseInt(value, 10);
     return Number.isNaN(n) ? 0 : n;
+  }
+
+  function continenteSigla(nombre) {
+    return (nombre || "")
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // sin tildes
+      .replace(/[^a-zA-Z]/g, "")                       // solo letras
+      .toUpperCase()
+      .slice(0, 3);
+  }
+
+  function getDestinoId() {
+    const val = (destinoSelect?.value || "").trim();
+    const n = parseInt(val, 10);
+    return Number.isNaN(n) ? null : n;
+  }
+
+  function getDestinoSigla() {
+    const destinoId = getDestinoId();
+    if (!destinoId) return "";
+    const cont = continentesById.get(destinoId);
+    return continenteSigla(cont?.nombre || "");
   }
 
   function calcularTotalPersonas() {
@@ -48,7 +74,6 @@ document.addEventListener("DOMContentLoaded", () => {
   function actualizarResumenPersonasYNombre() {
     const { total, detalle } = calcularTotalPersonas();
 
-    // Construir descripción
     const partes = [];
     if (detalle.a65 > 0) partes.push(`${detalle.a65} adulto(s) +65`);
     if (detalle.a1964 > 0) partes.push(`${detalle.a1964} adulto(s) 19-64`);
@@ -59,26 +84,33 @@ document.addEventListener("DOMContentLoaded", () => {
     const textoDetalle = partes.length > 0 ? ` (${partes.join(", ")})` : "";
     resumenPersonasEl.textContent = `Total: ${total} persona(s)${textoDetalle}`;
 
-    // También actualizamos la previsualización del nombre
     actualizarNombrePreview(total);
   }
 
   function actualizarNombrePreview(totalPasajeros) {
     const agente = agenteInput.value.trim();
     const nombrePasajero = nombrePasajeroInput.value.trim();
-    const fechaViaje = fechaViajeInput.value; // formato yyyy-mm-dd
+    const fechaViaje = fechaViajeInput.value; // yyyy-mm-dd
+    const destinoId = getDestinoId();
+    const sigla = getDestinoSigla();
+
+    if (!destinoId || !sigla) {
+      nombrePreviewEl.textContent = "(selecciona destino/continente)";
+      return;
+    }
 
     if (!agente || !nombrePasajero || !fechaViaje || totalPasajeros <= 0) {
-      nombrePreviewEl.textContent = "(completa agente, pasajero, fecha y pasajeros)";
+      nombrePreviewEl.textContent = "(completa destino, agente, pasajero, fecha y pasajeros)";
       return;
     }
 
     const [yearStr, monthStr] = fechaViaje.split("-");
     const yy = yearStr.slice(-2);
-    const mm = monthStr.padStart(2, "0");
+    const mm = (monthStr || "").padStart(2, "0");
     const sufijo = totalPasajeros === 1 ? "persona" : "personas";
 
-    const nombre = `${yy}${mm} ${agente} ${nombrePasajero} ${totalPasajeros} ${sufijo}`;
+    // ✅ Ahora incluye sigla del continente al inicio
+    const nombre = `${yy}${mm} ${sigla} ${agente} ${nombrePasajero} ${totalPasajeros} ${sufijo}`;
     nombrePreviewEl.textContent = nombre;
   }
 
@@ -87,21 +119,46 @@ document.addEventListener("DOMContentLoaded", () => {
     categoriasInputs.forEach((c) => {
       if (c.checked) valores.push(c.value);
     });
-    // Guardaremos algo tipo "3*,4*,5*"
     return valores.join(",");
   }
 
-  // --- Eventos para actualizar resumen y nombre ---
+  // ✅ Cargar continentes al select destino
+  async function cargarDestinos() {
+    if (!destinoSelect) return;
 
+    destinoSelect.innerHTML = `<option value="">(Seleccionar destino)</option>`;
+
+    try {
+      const resp = await fetch("/api/continentes");
+      const data = await resp.json();
+
+      // ✅ Ajusta aquí si tu API devuelve otro formato
+      const lista = Array.isArray(data) ? data : (data.continentes || data.data || []);
+
+      lista.forEach((c) => {
+        if (!c || c.id == null) return;
+        continentesById.set(Number(c.id), { id: Number(c.id), nombre: c.nombre || "" });
+
+        const opt = document.createElement("option");
+        opt.value = c.id;
+        opt.textContent = c.nombre || `Continente ${c.id}`;
+        destinoSelect.appendChild(opt);
+      });
+
+    } catch (err) {
+      console.error("Error cargando continentes:", err);
+      destinoSelect.innerHTML = `<option value="">(Error cargando continentes)</option>`;
+    }
+  }
+
+  // --- Eventos para actualizar resumen y nombre ---
   [
     adultos65Input,
     adultos1964Input,
     jovenes1218Input,
     ninos311Input,
     infantes02Input
-  ].forEach((input) => {
-    input.addEventListener("input", actualizarResumenPersonasYNombre);
-  });
+  ].forEach((input) => input.addEventListener("input", actualizarResumenPersonasYNombre));
 
   [agenteInput, nombrePasajeroInput, fechaViajeInput].forEach((input) => {
     input.addEventListener("input", () => {
@@ -109,6 +166,14 @@ document.addEventListener("DOMContentLoaded", () => {
       actualizarNombrePreview(total);
     });
   });
+
+  // ✅ destino afecta el nombre
+  if (destinoSelect) {
+    destinoSelect.addEventListener("change", () => {
+      const { total } = calcularTotalPersonas();
+      actualizarNombrePreview(total);
+    });
+  }
 
   // --- Moneda: mostrar/ocultar campo "Otro" ---
   monedaSelect.addEventListener("change", () => {
@@ -127,7 +192,6 @@ document.addEventListener("DOMContentLoaded", () => {
     mensajeOkEl.textContent = "";
 
     const { total } = calcularTotalPersonas();
-
     if (total <= 0) {
       mensajeErrorEl.textContent = "Debe haber al menos 1 pasajero.";
       return;
@@ -137,13 +201,22 @@ document.addEventListener("DOMContentLoaded", () => {
     const nombrePasajero = nombrePasajeroInput.value.trim();
     const fechaViaje = fechaViajeInput.value;
 
+    const destinoRaw = destinoSelect?.value ?? "";
+    const destino = destinoRaw !== "" ? Number.parseInt(destinoRaw, 10) : null;
+
+    if (destino === null || Number.isNaN(destino)) {
+      mensajeErrorEl.textContent = "Selecciona un destino (continente).";
+      return;
+    }
+
     if (!agente || !nombrePasajero || !fechaViaje) {
       mensajeErrorEl.textContent =
-        "Agente, nombre del pasajero y fecha de viaje son obligatorios.";
+        "Destino, agente, nombre del pasajero y fecha de viaje son obligatorios.";
       return;
     }
 
     const payload = {
+      destino,
       agente,
       nombre_pasajero: nombrePasajero,
       adultos_65: intOrZero(adultos65Input.value),
@@ -153,8 +226,6 @@ document.addEventListener("DOMContentLoaded", () => {
       infantes_0_2: intOrZero(infantes02Input.value),
       categorias: obtenerCategoriasSeleccionadas(),
       fecha_viaje: fechaViaje,
-      // De momento moneda_id lo mandamos null.
-      // Más adelante lo conectamos con tabla Moneda.
       moneda_id: null,
       nota: document.getElementById("nota").value.trim()
     };
@@ -175,7 +246,6 @@ document.addEventListener("DOMContentLoaded", () => {
       mensajeOkEl.textContent =
         `Cotización creada con ID ${data.id_cotizacion} y nombre "${data.nombre_cotizacion}". Redirigiendo...`;
 
-      // Redirigir inmediatamente al constructor de la cotización
       window.location.href = `cotizacion-editar.html?id=${data.id_cotizacion}`;
 
     } catch (err) {
@@ -185,6 +255,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // Inicializar resumen al cargar
-  actualizarResumenPersonasYNombre();
+  // Inicializar
+  (async () => {
+    await cargarDestinos();
+    actualizarResumenPersonasYNombre();
+  })();
 });
