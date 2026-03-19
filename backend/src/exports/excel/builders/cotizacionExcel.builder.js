@@ -4,6 +4,7 @@ const ExcelJS = require("exceljs");
 const { renderRow1 } = require("../renderers/rows/row1");
 const { renderRow2 } = require("../renderers/rows/row2");
 const { renderRow3y4 } = require("../renderers/rows/row3y4");
+const { renderVueloRow } = require("../renderers/services/vuelos");
 
 // ExcelJS usa "width" ~ caracteres, no pixeles.
 // Estos valores son aproximados para verse parecido.
@@ -105,19 +106,32 @@ function applyBaseFontToRange(ws, fromRow, toRow, fromColLetter, toColLetter) {
  * - aplica reglas globales (anchos + formatos)
  */
 
-async function buildCotizacionWorkbookBase(cotizacion) {
+async function buildCotizacionWorkbookBase(cotizacion, items = []) {
   const wb = new ExcelJS.Workbook();
   wb.creator = "WTravel";
   wb.created = new Date();
 
-  const ws = wb.addWorksheet("A", { views: [{ showGridLines: true }] });
+  const ws = wb.addWorksheet("A", {
+    views: [{ showGridLines: false }],
+  });
 
   applyGlobals(ws);
 
-  // Render filas fijas
+  // Filas fijas
   renderRow1(ws, cotizacion);
   renderRow2(ws, cotizacion);
   renderRow3y4(ws);
+
+  // Servicios dinámicos arrancan en fila 5
+  let currentRow = 5;
+
+  for (const item of items) {
+    const tipo = String(item.tipo_servicio || "").toLowerCase();
+
+    if (tipo.includes("vuelo") || tipo.includes("avion") || tipo.includes("avión")) {
+      currentRow = renderVueloRow(ws, currentRow, item);
+    }
+  }
 
   return wb;
 }
