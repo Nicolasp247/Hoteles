@@ -24,12 +24,11 @@ console.log("[STATIC] Sirviendo desde:", PUBLIC_DIR);
 // =========================
 // Rutas de exportación Excel
 // =========================
-
 const testExcelController = require("./src/exports/excel/controllers/testExcel.controller");
+const cotizacionExcelController = require("./src/exports/excel/controllers/cotizacionExcel.controller");
 
-// Ruta de prueba (mock)
 app.get("/api/exports/test.xlsx", testExcelController);
-
+app.get("/api/exports/cotizaciones/:id.xlsx", cotizacionExcelController);
 // =========================
 // Fin rutas exportación
 // =========================

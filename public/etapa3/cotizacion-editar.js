@@ -1450,4 +1450,21 @@ document.addEventListener("DOMContentLoaded", () => {
       inpNombreAutoPreview.value = "Se genera automáticamente al guardar";
     }
   })();
+
+  // ==========================
+  // Exportar Excel
+  // ==========================
+  function exportarExcelCotizacion() {
+    const id = idCotizacion; // este ya lo tienes cargado desde la URL
+    if (!id) {
+      alert("No hay cotización cargada");
+      return;
+    }
+
+    window.open(`/api/exports/cotizaciones/${id}.xlsx`, "_blank");
+  }
+
+  document.getElementById("btn-export-excel")
+    ?.addEventListener("click", exportarExcelCotizacion);
+
 });

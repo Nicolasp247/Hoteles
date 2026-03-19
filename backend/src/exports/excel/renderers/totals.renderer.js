@@ -1,1 +1,0 @@
-//ruta archivo: backend/src/exports/excel/renderers/totals.renderer.js

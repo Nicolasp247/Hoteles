@@ -1,1 +1,0 @@
-//ruta archivo: backend/src/exports/excel/utils/ranges.js

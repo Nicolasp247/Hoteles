@@ -11,12 +11,13 @@ function intOrZero(value) {
   return Number.isNaN(n) ? 0 : n;
 }
 
-function generarNombreCotizacion(fechaViaje, agente, nombrePasajero, totalPasajeros) {
+function generarNombreCotizacion(fechaViaje, agente, nombrePasajero, totalPasajeros, destinoSigla = "") {
   const [yearStr, monthStr] = String(fechaViaje).split("-");
   const yy = yearStr.slice(-2);
   const mm = String(monthStr || "").padStart(2, "0");
   const sufijo = totalPasajeros === 1 ? "persona" : "personas";
-  return `${yy}${mm} ${agente} ${nombrePasajero} ${totalPasajeros} ${sufijo}`;
+  const pref = destinoSigla ? `${destinoSigla} ` : "";
+  return `${yy}${mm} ${pref}${agente} ${nombrePasajero} ${totalPasajeros} ${sufijo}`;
 }
 
 function esTipoAlojamiento(nombreTipo) {
@@ -195,6 +196,14 @@ function buildServicioTexto(row) {
   return base;
 }
 
+function continenteSigla(nombre) {
+  return (nombre || "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z]/g, "")
+    .toUpperCase()
+    .slice(0, 3);
+}
+
 // Recompactar orden_dia dentro de una fecha (1..N), para evitar huecos/raro
 async function recompactarOrdenDia(conn, idCotizacion, fechaYmd) {
   const [rows] = await conn.execute(
@@ -234,6 +243,7 @@ router.post("/cotizaciones", async (req, res) => {
       categorias,
       fecha_viaje,
       moneda_id,
+      destino,
       nota
     } = req.body || {};
 
@@ -259,11 +269,24 @@ router.post("/cotizaciones", async (req, res) => {
       });
     }
 
+    // destino viene del payload y ya lo estás guardando bien
+    let destinoSigla = "";
+
+    if (destino) {
+      const [rows] = await db.query(
+        "SELECT nombre FROM continente WHERE id = ? LIMIT 1",
+        [destino]
+      );
+      const nombreContinente = rows?.[0]?.nombre || "";
+      destinoSigla = continenteSigla(nombreContinente); // función helper en backend
+    }
+
     const nombre_cotizacion = generarNombreCotizacion(
       fecha_viaje,
       agente,
       nombre_pasajero,
-      total_pasajeros
+      total_pasajeros,
+      destinoSigla
     );
 
     const sql = `
@@ -280,9 +303,10 @@ router.post("/cotizaciones", async (req, res) => {
         fecha_viaje,
         nombre_cotizacion,
         moneda_id,
+        destino,
         nota
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     const params = [
@@ -298,6 +322,7 @@ router.post("/cotizaciones", async (req, res) => {
       fecha_viaje,
       nombre_cotizacion,
       moneda_id || null,
+      destino || null,
       nota || null
     ];
 
