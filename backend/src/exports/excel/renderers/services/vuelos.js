@@ -1,10 +1,33 @@
-// backend/src/exports/excel/renderers/services/vuelos.js
+/**
+ * Este archivo se encarga de pintar en el Excel
+ * una fila de servicio del tipo vuelo.
+ *
+ * Aquí vive todo lo visual de ese bloque:
+ * - fecha
+ * - nombre del servicio
+ * - operador
+ * - zona de precios
+ * - notas
+ *
+ * La idea es que el builder solo mande el item correcto
+ * y este renderer se encargue de dejarlo bien presentado.
+ */
 
 const FILL_GRAY = "FFF2F2F2";
 const BLACK = "FF000000";
 const THIN = { style: "thin" };
 const USD_ACCOUNTING_0 = '_-"USD"* #,##0_ ;_-"USD"* (#,##0)_ ;_-"USD"* "-"??_ ;_(@_)';
 
+const FLIGHT_ROW_COLUMNS = "BCDEFGHIJKLMNO".split("");
+const MONEY_COLUMNS = "EFGHIJKLMN".split("");
+
+/**
+ * Esta función aplica bordes finos a una celda,
+ * solo en los lados que indiquemos.
+ *
+ * Así evitamos repetir el mismo bloque de bordes
+ * una y otra vez en cada columna.
+ */
 function setBorder(cell, opts = {}) {
   cell.border = {
     top: opts.top ? THIN : undefined,
@@ -14,6 +37,15 @@ function setBorder(cell, opts = {}) {
   };
 }
 
+/**
+ * Esta función intenta convertir una fecha
+ * al formato Date de JavaScript.
+ *
+ * Acepta fechas que ya vienen como Date
+ * o textos tipo YYYY-MM-DD.
+ *
+ * Si no logra entender el valor, devuelve null.
+ */
 function parseToDate(value) {
   if (!value) return null;
 
@@ -29,6 +61,13 @@ function parseToDate(value) {
   return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
 }
 
+/**
+ * Esta función aplica el estilo base de la fila:
+ * letra, color y fondo general.
+ *
+ * Luego cada columna puede ajustar encima
+ * lo que necesite de forma puntual.
+ */
 function setBaseStyle(cell) {
   cell.font = {
     name: "Calibri",
@@ -42,35 +81,25 @@ function setBaseStyle(cell) {
   };
 }
 
-function safeNumber(v) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-}
-
 /**
- * Renderiza 1 fila de vuelo.
- * Retorna la siguiente fila disponible.
+ * Esta función pinta una fila completa de vuelo
+ * dentro de la tabla principal del Excel.
  *
- * item esperado:
- * - fecha_servicio
- * - nombre_servicio / servicio_texto
- * - proveedor_iniciales
- * - proveedor_link
- * - precio_usd (si algún día decides usarlo)
+ * Recibe la hoja, la fila donde debe empezar
+ * y el item del servicio.
+ *
+ * Al final devuelve la siguiente fila libre,
+ * para que el builder pueda seguir con el próximo servicio.
  */
 function renderVueloRow(ws, row, item) {
   ws.getRow(row).height = 18;
 
-  // B..O fondo gris
-  const cols = "BCDEFGHIJKLMNO".split("");
-  for (const col of cols) {
+  for (const col of FLIGHT_ROW_COLUMNS) {
     const cell = ws.getCell(`${col}${row}`);
     setBaseStyle(cell);
   }
 
-  // =========================
-  // Columna B
-  // =========================
+  // Columna B: fecha
   const b = ws.getCell(`B${row}`);
   b.value = parseToDate(item.fecha_servicio);
   b.numFmt = 'dddd, d "de" mmmm "de" yyyy';
@@ -81,11 +110,9 @@ function renderVueloRow(ws, row, item) {
   };
   setBorder(b, { left: true, top: true, bottom: true });
 
-  // =========================
-  // Columna C
-  // =========================
+  // Columna C: nombre del servicio
   const c = ws.getCell(`C${row}`);
-  c.value = item.nombre_servicio || item.servicio_texto || "";
+  c.value = item.titulo_override || item.nombre_servicio || item.descripcion_servicio || "";
   c.alignment = {
     horizontal: "left",
     vertical: "middle",
@@ -94,9 +121,7 @@ function renderVueloRow(ws, row, item) {
   };
   setBorder(c, { top: true, bottom: true, right: true });
 
-  // =========================
-  // Columna D
-  // =========================
+  // Columna D: operador / proveedor
   const d = ws.getCell(`D${row}`);
   d.value = item.proveedor_iniciales || "";
   d.alignment = {
@@ -119,11 +144,8 @@ function renderVueloRow(ws, row, item) {
     };
   }
 
-  // =========================
-  // Columnas E..N
-  // =========================
-  const moneyCols = "EFGHIJKLMN".split("");
-  for (const col of moneyCols) {
+  // Columnas E..N: precios
+  for (const col of MONEY_COLUMNS) {
     const cell = ws.getCell(`${col}${row}`);
     cell.numFmt = USD_ACCOUNTING_0;
     cell.alignment = {
@@ -133,20 +155,17 @@ function renderVueloRow(ws, row, item) {
       wrapText: true,
     };
     setBorder(cell, { left: true, right: true, top: true, bottom: true });
-
-    // Por ahora vacío. Si más adelante decides meter precio en alguna columna, aquí lo asignamos.
     cell.value = null;
   }
 
-  // =========================
-  // Columna O
-  // =========================
+  // Columna O: notas
   const o = ws.getCell(`O${row}`);
-  o.value = "";
+  o.value = item.nota_linea || "";
   o.alignment = {
-    horizontal: "center",
+    horizontal: "left",
     vertical: "middle",
     wrapText: true,
+    indent: 1,
   };
   setBorder(o, { left: true, right: true, top: true, bottom: true });
 
