@@ -1,30 +1,61 @@
 // backend/src/exports/excel/renderers/rows/row1.js
 
-function buildHeaderLine1(c) {
-    const agente = String(c?.agente ?? "").trim();
-    const pasajero = String(c?.nombre_pasajero ?? "").trim();
+/**
+ * Este archivo se encarga de pintar la primera fila fija
+ * del encabezado principal del Excel.
+ *
+ * Aquí se muestra la línea general con:
+ * - agente
+ * - pasajero principal
+ * - total de personas
+ * - desglose por tipo de pasajero
+ */
 
-    const total = Number(c?.total_pasajeros ?? 0);
+const HEADER_ROW_1_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FF002060" } };
+const HEADER_ROW_1_FONT = { name: "Calibri", size: 14, bold: true, color: { argb: "FFFFFFFF" } };
+const HEADER_ROW_1_ALIGNMENT = { horizontal: "center", vertical: "bottom", wrapText: true };
+const HEADER_ROW_1_COLUMNS = "BCDEFGHIJKLMNO".split("");
 
-    const ninos = Number(c?.ninos_3_11 ?? 0);
-    const adultos = Number(c?.adultos_19_64 ?? 0);
-    const jovenes = Number(c?.jovenes_12_18 ?? 0);
-    const infantes = Number(c?.infantes_0_2 ?? c?.infante_0_2 ?? 0);
-    const adultos65 = Number(c?.adultos_65 ?? 0);
+/**
+ * Esta función arma el texto principal de la fila 1,
+ * juntando agente, pasajero y resumen de pasajeros.
+ *
+ * También agrega el desglose por tipo de viajero
+ * cuando esos valores vienen informados.
+ */
+function buildHeaderLine1(cotizacion) {
+  const agente = String(cotizacion?.agente ?? "").trim();
+  const pasajero = String(cotizacion?.nombre_pasajero ?? "").trim();
 
-    const parts = [];
-    if (ninos > 0) parts.push(`${ninos} NIÑ`);
-    if (adultos > 0) parts.push(`${adultos} ADT`);
-    if (jovenes > 0) parts.push(`${jovenes} JV`);
-    if (infantes > 0) parts.push(`${infantes} INF`);
-    if (adultos65 > 0) parts.push(`${adultos65} ADT+65`);
+  const total = Number(cotizacion?.total_pasajeros ?? 0);
 
-    const totalTxt = `${total} personas`;
-    const detailTxt = parts.length ? ` (${parts.join(", ")})` : "";
+  const ninos = Number(cotizacion?.ninos_3_11 ?? 0);
+  const adultos = Number(cotizacion?.adultos_19_64 ?? 0);
+  const jovenes = Number(cotizacion?.jovenes_12_18 ?? 0);
+  const infantes = Number(cotizacion?.infantes_0_2 ?? cotizacion?.infante_0_2 ?? 0);
+  const adultos65 = Number(cotizacion?.adultos_65 ?? 0);
 
-    return `${agente} // ${pasajero} // ${totalTxt}${detailTxt}`.trim();
+  const detallePasajeros = [];
+  if (ninos > 0) detallePasajeros.push(`${ninos} NIÑ`);
+  if (adultos > 0) detallePasajeros.push(`${adultos} ADT`);
+  if (jovenes > 0) detallePasajeros.push(`${jovenes} JV`);
+  if (infantes > 0) detallePasajeros.push(`${infantes} INF`);
+  if (adultos65 > 0) detallePasajeros.push(`${adultos65} ADT+65`);
+
+  const totalTxt = `${total} personas`;
+  const pasajerosTxt = detallePasajeros.length ? `${totalTxt} (${detallePasajeros.join(", ")})` : totalTxt;
+
+  const bloques = [agente, pasajero, pasajerosTxt].filter(Boolean);
+  return bloques.join(" // ");
 }
 
+/**
+ * Esta función aplica bordes finos a una celda,
+ * solo en los lados que indiquemos.
+ *
+ * Así evitamos repetir el mismo bloque
+ * cada vez que pintamos la cabecera.
+ */
 function setBorder(cell, opts = {}) {
     const thin = { style: "thin" };
     cell.border = {
@@ -33,61 +64,35 @@ function setBorder(cell, opts = {}) {
             bottom: opts.bottom ? thin : undefined,
             right: opts.right ? thin : undefined,
     };
-    }
+}
 
+/**
+ * Esta función pinta la fila 1 del encabezado,
+ * con su merge, estilos, bordes y texto principal.
+ */
 function renderRow1(ws, cotizacion) {
-    // Altura de fila
-    ws.getRow(1).height = 30;
-  
-    // Merge B1:O1
-    ws.mergeCells("B1:O1");
+  ws.getRow(1).height = 30;
+  ws.mergeCells("B1:O1");
 
-    // A1 borde derecho
-    const a1 = ws.getCell("A1");
-    setBorder(a1, { right: true });
+  const a1 = ws.getCell("A1");
+  setBorder(a1, { right: true });
 
-    const b1 = ws.getCell("B1");
+  const b1 = ws.getCell("B1");
 
-    // Color fondo
-    b1.fill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: "FF002060" }
-    };
+  for (const col of HEADER_ROW_1_COLUMNS) {
+    const cell = ws.getCell(`${col}1`);
+    cell.fill = HEADER_ROW_1_FILL;
+    cell.font = HEADER_ROW_1_FONT;
+    cell.alignment = HEADER_ROW_1_ALIGNMENT;
 
-    // Fuente
-    b1.font = {
-        name: "Calibri",
-        size: 14,
-        bold: true,
-        color: { argb: "FFFFFFFF" }
-    };
+    setBorder(cell, {
+      top: true,
+      left: col === "B",
+      right: col === "O",
+    });
+  }
 
-    // Alineación
-    b1.alignment = {
-        horizontal: "center",
-        vertical: "bottom",
-        wrapText: true
-    };
-
-    // Bordes del bloque
-    const cols = "BCDEFGHIJKLMNO".split("");
-
-    for (const col of cols) {
-        const cell = ws.getCell(`${col}1`);
-
-        cell.fill = b1.fill;
-        cell.font = b1.font;
-        cell.alignment = b1.alignment;
-
-        setBorder(cell, {
-        top: true,
-        left: col === "B",
-        right: col === "O"
-        });
-    }
-
-    b1.value = buildHeaderLine1(cotizacion);
+  b1.value = buildHeaderLine1(cotizacion);
 }
 
 module.exports = { renderRow1 };
