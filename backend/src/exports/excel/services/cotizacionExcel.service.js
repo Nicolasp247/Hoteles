@@ -1,4 +1,4 @@
-// backend/src/exports/excel/services/cotizacionExcel.service.js
+//backend/src/exports/excel/services/cotizacionExcel.service.js
 
 /**
  * Este archivo se encarga de buscar en la base de datos
@@ -53,11 +53,25 @@ const GET_COTIZACION_ITEMS_QUERY = `
     s.nombre_wtravel AS nombre_servicio,
     s.descripcion AS descripcion_servicio,
     s.link_reserva AS proveedor_link,
+    s.id_ciudad AS servicio_ciudad_id,
+
     p.iniciales AS proveedor_iniciales,
 
     ts.id AS tipo_servicio_id,
     ts.nombre AS tipo_servicio,
+
     c.nombre AS ciudad,
+    c.nombre AS ciudad_nombre,
+
+    paises.nombre AS pais_nombre,
+
+    spm.precio_usd AS precio_mes_usd,
+
+    alojamiento.noches AS alojamiento_noches,
+    alojamiento.categoria_hotel AS alojamiento_categoria_hotel,
+
+    apm_dbl.precio_usd AS alojamiento_precio_dbl_usd,
+    apm_trp.precio_usd AS alojamiento_precio_trp_usd,
 
     v.origen AS vuelo_origen,
     v.destino AS vuelo_destino,
@@ -69,8 +83,34 @@ const GET_COTIZACION_ITEMS_QUERY = `
   JOIN servicio s ON s.id = ci.id_servicio
   JOIN tiposervicio ts ON ts.id = s.id_tipo
   JOIN ciudad c ON c.id = s.id_ciudad
-  LEFT JOIN proveedor p ON p.id = s.id_proveedor
-  LEFT JOIN vuelo v ON v.id_servicio = s.id
+
+  LEFT JOIN pais paises
+    ON paises.id = c.id_pais
+
+  LEFT JOIN proveedor p
+    ON p.id = s.id_proveedor
+
+  LEFT JOIN vuelo v
+    ON v.id_servicio = s.id
+
+  LEFT JOIN servicio_precio_mes spm
+    ON spm.id_servicio = s.id
+   AND spm.mes = MONTH(ci.fecha_servicio)
+   AND spm.anio = YEAR(ci.fecha_servicio)
+
+  LEFT JOIN alojamiento
+    ON alojamiento.id_servicio = s.id
+
+  LEFT JOIN alojamiento_precio_mes apm_dbl
+    ON apm_dbl.id_ciudad = s.id_ciudad
+   AND apm_dbl.categoria = alojamiento.categoria_hotel
+   AND apm_dbl.tipo_habitacion = 'DBL'
+
+  LEFT JOIN alojamiento_precio_mes apm_trp
+    ON apm_trp.id_ciudad = s.id_ciudad
+   AND apm_trp.categoria = alojamiento.categoria_hotel
+   AND apm_trp.tipo_habitacion = 'TRP'
+
   WHERE ci.id_cotizacion = ?
   ORDER BY ci.fecha_servicio ASC, ci.orden_dia ASC, ci.id_item ASC
 `;

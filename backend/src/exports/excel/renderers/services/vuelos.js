@@ -1,16 +1,16 @@
+//backend/src/exports/excel/renderers/services/vuelos.js
+
 /**
  * Este archivo se encarga de pintar en el Excel
- * una fila de servicio del tipo vuelo.
+ * una fila de servicio que usa el formato de transporte.
  *
- * Aquí vive todo lo visual de ese bloque:
- * - fecha
- * - nombre del servicio
- * - operador
- * - zona de precios
- * - notas
+ * Aquí entran servicios que comparten el mismo estilo visual,
+ * como por ejemplo:
+ * - vuelo
+ * - tren
  *
- * La idea es que el builder solo mande el item correcto
- * y este renderer se encargue de dejarlo bien presentado.
+ * La idea es que, si dos tipos de servicio se ven igual,
+ * usen el mismo renderer para evitar código repetido.
  */
 
 const FILL_GRAY = "FFF2F2F2";
@@ -18,7 +18,7 @@ const BLACK = "FF000000";
 const THIN = { style: "thin" };
 const USD_ACCOUNTING_0 = '_-"USD"* #,##0_ ;_-"USD"* (#,##0)_ ;_-"USD"* "-"??_ ;_(@_)';
 
-const FLIGHT_ROW_COLUMNS = "BCDEFGHIJKLMNO".split("");
+const TRANSPORT_ROW_COLUMNS = "BCDEFGHIJKLMNO".split("");
 const MONEY_COLUMNS = "EFGHIJKLMN".split("");
 
 /**
@@ -82,7 +82,7 @@ function setBaseStyle(cell) {
 }
 
 /**
- * Esta función pinta una fila completa de vuelo
+ * Esta función pinta una fila completa de transporte
  * dentro de la tabla principal del Excel.
  *
  * Recibe la hoja, la fila donde debe empezar
@@ -91,10 +91,10 @@ function setBaseStyle(cell) {
  * Al final devuelve la siguiente fila libre,
  * para que el builder pueda seguir con el próximo servicio.
  */
-function renderVueloRow(ws, row, item) {
+function renderTransportRow(ws, row, item) {
   ws.getRow(row).height = 18;
 
-  for (const col of FLIGHT_ROW_COLUMNS) {
+  for (const col of TRANSPORT_ROW_COLUMNS) {
     const cell = ws.getCell(`${col}${row}`);
     setBaseStyle(cell);
   }
@@ -172,4 +172,4 @@ function renderVueloRow(ws, row, item) {
   return row + 1;
 }
 
-module.exports = { renderVueloRow };
+module.exports = { renderTransportRow };

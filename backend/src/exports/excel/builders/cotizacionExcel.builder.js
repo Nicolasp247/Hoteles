@@ -1,18 +1,32 @@
 // backend/src/exports/excel/builders/cotizacionExcel.builder.js
+/**
+ * Este archivo se encarga de construir el Excel base
+ * de una cotización.
+ *
+ * Aquí se prepara la hoja principal, se aplican
+ * los estilos globales, se pintan las filas fijas
+ * y luego se recorren los servicios dinámicos
+ * para enviarlos al renderer que corresponda.
+ */
+
 const ExcelJS = require("exceljs");
 const { renderRow1 } = require("../renderers/rows/row1");
 const { renderRow2 } = require("../renderers/rows/row2");
 const { renderRow3y4 } = require("../renderers/rows/row3y4");
-const { renderVueloRow } = require("../renderers/services/vuelos");
-const { SERVICE_TYPE_IDS } = require("../services/serviceTypes");
+const { renderTransportRow } = require("../renderers/services/vuelos");
+const { renderVisitaRow } = require("../renderers/services/visitas");
+const { renderTrasladoRow } = require("../renderers/services/traslados");
+const { renderAlojamientoRow } = require("../renderers/services/alojamiento");
+const { SERVICE_TYPE_IDS, VISIT_SERVICE_TYPE_IDS } = require("../services/serviceTypes");
+const { renderTotalesFinales } = require("../renderers/totals/totalesFinales");
 
 // ExcelJS usa "width" ~ caracteres, no pixeles.
 // Estos valores son aproximados para verse parecido.
 const COL_WIDTHS = {
   A: 3,
-  B: 30,  
-  C: 80,  
-  D: 15,  
+  B: 30,
+  C: 80,
+  D: 15,
   E: 15,
   F: 15,
   G: 15,
@@ -23,55 +37,47 @@ const COL_WIDTHS = {
   L: 15,
   M: 15,
   N: 15,
-  O: 40,  
-  P: 3,   
+  O: 40,
+  P: 3,
 };
 
 // Formato de contabilidad USD, 0 decimales
 const USD_ACCOUNTING_0 = '_-"USD"* #,##0_ ;_-"USD"* (#,##0)_ ;_-"USD"* "-"??_ ;_(@_)';
 
+/**
+ * Esta función aplica la configuración global de la hoja:
+ * anchos de columnas, formatos y alineaciones base.
+ */
 function applyGlobals(ws) {
-  // Ocultar gridlines
   ws.views = [{ showGridLines: true }];
 
-  // Anchos A..P
   Object.entries(COL_WIDTHS).forEach(([letter, width]) => {
     ws.getColumn(letter).width = width;
   });
 
-  // Formatos por columna
-  // B: fecha tipo "miércoles, 14 de marzo de 2012"
   ws.getColumn("B").numFmt = 'dddd, d "de" mmmm "de" yyyy';
 
-  // E..N: contabilidad USD, 0 decimales
-  ["E","F","G","H","I","J","K","L","M","N"].forEach((col) => {
+  ["E", "F", "G", "H", "I", "J", "K", "L", "M", "N"].forEach((col) => {
     ws.getColumn(col).numFmt = USD_ACCOUNTING_0;
   });
 
-  // ==============================
-  // 🔵 ALINEACIONES GLOBALES
-  // ==============================
+  const centerCols = ["A", "B", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "P"];
+  const leftIndentCols = ["C", "O"];
 
-  const centerCols = ["A","B","D","E","F","G","H","I","J","K","L","M","N","P"];
-  const leftIndentCols = ["C","O"];
-
-  // Centro horizontal + vertical centro
   centerCols.forEach((col) => {
     ws.getColumn(col).alignment = {
       horizontal: "center",
-      vertical: "middle"
+      vertical: "middle",
     };
   });
 
-  // Izquierda con sangría + vertical centro
   leftIndentCols.forEach((col) => {
     ws.getColumn(col).alignment = {
       horizontal: "left",
       vertical: "middle",
-      indent: 1   // cambiar a 2 si quieres más sangría
+      indent: 1,
     };
   });
-
 }
 
 /**
@@ -84,12 +90,26 @@ function applyGlobals(ws) {
 function getServiceRenderer(item) {
   const tipoId = Number(item?.tipo_servicio_id);
 
-  switch (tipoId) {
-    case SERVICE_TYPE_IDS.VUELO:
-      return renderVueloRow;
-    default:
-      return null;
+  if (tipoId === SERVICE_TYPE_IDS.ALOJAMIENTO) {
+    return renderAlojamientoRow;
   }
+
+  if (
+    tipoId === SERVICE_TYPE_IDS.VUELO ||
+    tipoId === SERVICE_TYPE_IDS.TREN
+  ) {
+    return renderTransportRow;
+  }
+
+  if (tipoId === SERVICE_TYPE_IDS.TRASLADO) {
+    return renderTrasladoRow;
+  }
+
+  if (VISIT_SERVICE_TYPE_IDS.includes(tipoId)) {
+    return renderVisitaRow;
+  }
+
+  return null;
 }
 
 const UNSUPPORTED_SERVICE_COLUMNS = ["B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O"];
@@ -176,45 +196,61 @@ function applyBaseFontToRange(ws, fromRow, toRow, fromColLetter, toColLetter) {
 }
 
 /**
- * Crea workbook base para export de cotización.
- * - 1 sola hoja
- * - nombre de hoja: "A"
- * - aplica reglas globales (anchos + formatos)
+ * Esta función construye el Excel base de una cotización.
+ *
+ * Se encarga de:
+ * - crear el workbook
+ * - preparar la hoja principal
+ * - aplicar estilos globales
+ * - pintar las filas fijas
+ * - recorrer los servicios dinámicos
+ * - agregar el bloque final de totales
  */
-
 async function buildCotizacionWorkbookBase(cotizacion, items = []) {
-  const wb = new ExcelJS.Workbook();
-  wb.creator = "WTravel";
-  wb.created = new Date();
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "WTravel";
+  workbook.created = new Date();
 
-  const ws = wb.addWorksheet("A", {
+  const ws = workbook.addWorksheet("A", {
     views: [{ showGridLines: false }],
   });
 
   applyGlobals(ws);
 
-  // Filas fijas
   renderRow1(ws, cotizacion);
   renderRow2(ws, cotizacion);
   renderRow3y4(ws);
 
-  // Servicios dinámicos arrancan en fila 5
   let currentRow = 5;
+  const DATA_START_ROW = 5;
 
-  for (const item of items) {
+  for (let index = 0; index < items.length; index++) {
+    const item = items[index];
+    const previousItem = index > 0 ? items[index - 1] : null;
+    const nextItem = index < items.length - 1 ? items[index + 1] : null;
+
     const renderer = getServiceRenderer(item);
 
     if (renderer) {
-      currentRow = renderer(ws, currentRow, item);
+      currentRow = renderer(ws, currentRow, item, {
+        previousItem,
+        nextItem,
+        totalPasajeros: cotizacion?.total_pasajeros,
+      });
     } else {
       currentRow = renderUnsupportedServiceRow(ws, currentRow, item);
     }
   }
 
-  return wb;
+  if (currentRow > DATA_START_ROW) {
+    const lastServiceRow = currentRow - 1;
+    currentRow = renderTotalesFinales(ws, currentRow, DATA_START_ROW, lastServiceRow);
+  }
+
+  return workbook;
 }
 
 module.exports = {
   buildCotizacionWorkbookBase,
-  applyBaseFontToRange, // lo exporto para que lo uses en builders de filas
+  applyBaseFontToRange,
 };
